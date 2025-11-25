@@ -8,29 +8,34 @@
 #include "gtest/gtest.h"
 using namespace std;
 
-int Txt2Arrary( float* &points_array , string file_name , int num_feature = 4)
+const int input_num_feature = 5;
+
+int Bin2Arrary(float* &points_array , string file_name , int num_feature)
 {
-  ifstream InFile;
-  InFile.open(file_name.data());
-  assert(InFile.is_open());
+  ifstream infile(file_name, ios::binary);
+  assert(infile.is_open());
 
-  vector<float> temp_points;
-  string c;
+  // 获取文件大小
+  infile.seekg(0, ios::end);
+  size_t file_size = infile.tellg();
+  infile.seekg(0, ios::beg);
+  if (file_size % (sizeof(float) * num_feature) != 0)
+    std::cerr << "Warning: file size does not match expected format!" << std::endl;
 
-  while (!InFile.eof())
-  {
-      InFile >> c;
+  // 计算点的数量：文件大小 / (每个特征的字节数 * 特征数量)
+  size_t total_floats = file_size / sizeof(float);
+  size_t num_points = total_floats / num_feature;
 
-      temp_points.push_back(atof(c.c_str()));
-  }
-  points_array = new float[temp_points.size()];
-  for (int i = 0 ; i < temp_points.size() ; ++i) {
-    points_array[i] = temp_points[i];
-  }
 
-  InFile.close();  
-  return temp_points.size() / num_feature;
-  // printf("Done");
+  // 分配内存并读取二进制数据
+  points_array = new float[total_floats];
+
+  // reinterpret_cast不改变内存内容，只改变解释内存的方式。
+  // float 存的还是 float 的数据，只是把起始地址作为 char*（一个字节一个字节读取）。
+  infile.read(reinterpret_cast<char*>(points_array), file_size);
+  infile.close();
+
+  return static_cast<int>(num_points);
 };
 
 void Boxes2Txt( std::vector<float> boxes , string file_name , int num_feature = 7)
@@ -49,9 +54,9 @@ void Boxes2Txt( std::vector<float> boxes , string file_name , int num_feature = 
     return ;
 };
 
-TEST(PointPillars, __build_model__) {
 
-  const std::string DB_CONF = "../bootstrap.yaml";
+TEST(PointPillars, __build_model__) {
+  const std::string DB_CONF = "/home/gef/PointPillars_MultiHead_40FPS/bootstrap.yaml";
   YAML::Node config = YAML::LoadFile(DB_CONF);
 
   std::string pfe_file,backbone_file; 
@@ -71,17 +76,15 @@ TEST(PointPillars, __build_model__) {
     pfe_file,
     backbone_file,
     pp_config
-  );
+  ); 
   std::string file_name = config["InputFile"].as<std::string>();
   float* points_array;
   int in_num_points;
-  in_num_points = Txt2Arrary(points_array,file_name,5);
- 
+  in_num_points = Bin2Arrary(points_array, file_name, input_num_feature);
 
   
   for (int _ = 0 ; _ < 10 ; _++)
   {
-
     std::vector<float> out_detections;
     std::vector<int> out_labels;
     std::vector<float> out_scores;
