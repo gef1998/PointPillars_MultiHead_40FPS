@@ -7,6 +7,7 @@ import numpy as np
 from visual_tools import draw_clouds_with_boxes
 import open3d as o3d
 import yaml
+import os
 
 def cfg_from_yaml_file(cfg_file, config):
     with open(cfg_file, 'r') as f:
@@ -27,7 +28,7 @@ def dataloader(cloud_path , boxes_path):
 
 if __name__ == "__main__":
     import yaml
-    with open("../bootstrap.yaml") as f:
+    with open("bootstrap.yaml") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
     cloud ,boxes = dataloader(config['InputFile'], config['OutputFile'])
     draw_clouds_with_boxes(cloud ,boxes)

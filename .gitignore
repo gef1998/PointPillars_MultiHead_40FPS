@@ -13,3 +13,11 @@ venv/
 *.pkl
 *.zip
 *.bin
+projects/
+*.onnx
+*.trt
+*.png
+*.txt
+*.npy
+.vscode/
+*.vsix
