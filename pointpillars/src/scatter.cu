@@ -45,17 +45,24 @@
 
 //headers in local files
 #include "scatter.h"
+// #ifndef NDEBUG
+// #include <stdio.h>
+// #endif
 
 __global__ void scatter_kernel(int *x_coors, int *y_coors, float *pfe_output,
   float *scattered_feature, const int grid_x_size,
   const int grid_y_size) {
-int i_pillar = blockIdx.x;
-int i_feature = threadIdx.x;
-int x_ind = x_coors[i_pillar];
-int y_ind = y_coors[i_pillar];
-float feature = pfe_output[i_pillar * 64 + i_feature];
-scattered_feature[i_feature * grid_y_size * grid_x_size +
-y_ind * grid_x_size + x_ind] = feature;
+  int i_pillar = blockIdx.x;
+  int i_feature = threadIdx.x;
+  int x_ind = x_coors[i_pillar];
+  int y_ind = y_coors[i_pillar];
+  scattered_feature[i_feature * grid_y_size * grid_x_size + y_ind * grid_x_size + x_ind] = pfe_output[i_pillar * 64 + i_feature];
+  // #ifndef NDEBUG
+  // __syncthreads();
+  // if (i_feature == 0){
+  //     printf("scattered_feature 第 %d deatur为 %.8f \n",  y_ind * grid_x_size + x_ind,  scattered_feature[y_ind * grid_x_size + x_ind] );
+  // }
+  // #endif
 }
 
 ScatterCuda::ScatterCuda(const int num_threads, const int grid_x_size,

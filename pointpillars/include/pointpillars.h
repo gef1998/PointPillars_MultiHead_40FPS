@@ -45,28 +45,32 @@
 #pragma once
 
 // headers in STL
-#include <algorithm>
-#include <cmath>
-#include <iomanip>
-#include <limits>
-#include <map>
-#include <memory>
-#include <string>
-#include <vector>
-#include <iostream>
-#include <sstream>
-#include <fstream>
+// 标准模板库头文件
+#include <algorithm>  // 算法库，提供sort、max、min等常用算法
+#include <cmath>      // 数学函数库，提供sin、cos、sqrt等数学运算
+#include <iomanip>    // 输入输出流格式控制库，用于格式化输出
+#include <limits>     // 数值极限库，提供数值类型的最大值、最小值等
+#include <map>        // 映射容器库，提供键值对映射数据结构
+#include <memory>     // 智能指针库，提供shared_ptr、unique_ptr等
+#include <string>     // 字符串库，提供string类和相关操作
+#include <vector>     // 向量容器库，提供动态数组数据结构
+#include <iostream>   // 输入输出流库，提供cin、cout等标准I/O
+#include <sstream>    // 字符串流库，提供stringstream用于字符串处理
+#include <fstream>    // 文件流库，提供文件读写功能
+
 // headers in TensorRT
-#include "NvInfer.h"
-#include "NvOnnxParser.h"
+// TensorRT推理引擎头文件
+#include "NvInfer.h"        // TensorRT核心库，提供ICudaEngine、IExecutionContext等接口
+#include "NvOnnxParser.h"   // ONNX解析器库，用于将ONNX模型转换为TensorRT引擎
 
 // headers in local files
-// #include "params.h"
-#include "common.h"
-#include <yaml-cpp/yaml.h>
-#include "preprocess.h"
-#include "scatter.h"
-#include "postprocess.h"
+// 本地文件头文件
+// #include "params.h"          // 参数头文件（已注释，不再使用）
+#include "common.h"          // 通用定义和工具函数头文件
+#include <yaml-cpp/yaml.h>   // YAML配置文件解析库，用于读取配置文件
+#include "preprocess.h"      // 预处理模块头文件，包含点云预处理相关类
+#include "scatter.h"         // 散射操作模块头文件，包含特征散射相关类
+#include "postprocess.h"     // 后处理模块头文件，包含检测结果后处理相关类
 
 using namespace std;
 
@@ -131,7 +135,7 @@ class PointPillars {
     int kMaxNumPillars;
     int kMaxNumPointsPerPillar;
     int kNumPointFeature;
-    int kNumGatherPointFeature = 11;
+    int kNumGatherPointFeature;
     int kGridXSize;
     int kGridYSize;
     int kGridZSize;
@@ -139,6 +143,7 @@ class PointPillars {
     int kNumAnchorYinds;
     int kRpnInputSize;
     int kNumAnchor;
+    int kNumFeature;
     int kNumInputBoxFeature;
     int kNumOutputBoxFeature;
     int kRpnBoxOutputSize;
@@ -146,20 +151,29 @@ class PointPillars {
     int kRpnDirOutputSize;
     int kBatchSize;
     int kNumIndsForScan;
-    int kNumThreads;
+    int kNumThreads; // TODO: 与pfe输出的channel数有关，需要解耦？
     // if you change kNumThreads, need to modify NUM_THREADS_MACRO in
     // common.h
     int kNumBoxCorners;
     int kNmsPreMaxsize;
     int kNmsPostMaxsize;
     //params for initialize anchors
+    //Adapt to MMdet
+    std::vector<int> kLayerStrides;
+    std::vector<nvtype::Int2> kFeatureSize;
     //Adapt to OpenPCDet
     int kAnchorStrides;
+    float kDirOffset;
     std::vector<string> kAnchorNames;
     std::vector<float> kAnchorDxSizes;
     std::vector<float> kAnchorDySizes;
     std::vector<float> kAnchorDzSizes;
-    std::vector<float> kAnchorBottom;
+
+    std::vector<std::vector<float>> kAnchorSizes;
+    float kAnchorBottom;
+    std::vector<float> kAnchorRotations;
+    int kLenPerAnchor;
+
     std::vector<std::vector<int>> kMultiheadLabelMapping;
     int kNumAnchorPerCls;
     int host_pillar_count_[1];
@@ -178,7 +192,7 @@ class PointPillars {
     float* dev_pfe_gather_feature_;
     void* pfe_buffers_[2];
     //variable for doPostprocessCudaMultiHead
-    void* rpn_buffers_[8];
+    void* rpn_buffers_[4];
     
     std::vector<float*> rpn_box_output_; 
     std::vector<float*> rpn_cls_output_;
@@ -198,7 +212,7 @@ class PointPillars {
 
     std::unique_ptr<PreprocessPointsCuda> preprocess_points_cuda_ptr_;
     std::unique_ptr<ScatterCuda> scatter_cuda_ptr_;
-    std::unique_ptr<PostprocessCuda> postprocess_cuda_ptr_;
+    std::unique_ptr<Postprocess> postprocess_ptr_;
 
     Logger g_logger_;
     nvinfer1::ICudaEngine* pfe_engine_;
@@ -281,7 +295,7 @@ class PointPillars {
      * @param[out] out_labels Network output object's label
      * @details This is an interface for the algorithm
      */
-    void DoInference(const float* in_points_array,
+    std::vector<BoundingBox> DoInference(const float* in_points_array,
                     const int in_num_points,
                     std::vector<float>* out_detections,
                     std::vector<int>* out_labels,

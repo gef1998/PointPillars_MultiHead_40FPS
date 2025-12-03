@@ -63,7 +63,13 @@ void PointPillars::InitParams()
     kNumClass = params["CLASS_NAMES"].size();
     kMaxNumPillars = params["DATA_CONFIG"]["DATA_PROCESSOR"][2]["MAX_NUMBER_OF_VOXELS"]["test"].as<int>();
     kMaxNumPointsPerPillar = params["DATA_CONFIG"]["DATA_PROCESSOR"][2]["MAX_POINTS_PER_VOXEL"].as<int>();
-    kNumPointFeature = 5; // [x, y, z, i,0]
+    kNumPointFeature = params["DATA_CONFIG"]["DATA_PROCESSOR"][2]["kNumPointFeature"].as<int>();
+    kNumGatherPointFeature = kNumPointFeature;
+    if (params["DATA_CONFIG"]["DATA_PROCESSOR"][2]["with_cluster_center"].as<bool>())
+        kNumGatherPointFeature += 3;
+    if (params["DATA_CONFIG"]["DATA_PROCESSOR"][2]["with_voxel_center"].as<bool>())
+        kNumGatherPointFeature += 3;
+
     kNumInputBoxFeature = 7;
     kNumOutputBoxFeature = params["MODEL"]["DENSE_HEAD"]["TARGET_ASSIGNER_CONFIG"]["BOX_CODER_CONFIG"]["code_size"].as<int>();
     kBatchSize = 1;
@@ -71,18 +77,15 @@ void PointPillars::InitParams()
     kNumThreads = 64;
     kNumBoxCorners = 8;
     kAnchorStrides = 4;
+    kLayerStrides = params["MODEL"]["BACKBONE_2D"]["LAYER_STRIDES"].as<std::vector<int>>();
     kNmsPreMaxsize = params["MODEL"]["POST_PROCESSING"]["NMS_CONFIG"]["NMS_PRE_MAXSIZE"].as<int>();
     kNmsPostMaxsize = params["MODEL"]["POST_PROCESSING"]["NMS_CONFIG"]["NMS_POST_MAXSIZE"].as<int>();
     //params for initialize anchors
-    //Adapt to OpenPCDet
-    kAnchorNames = params["CLASS_NAMES"].as<std::vector<std::string>>();
-    for (int i = 0; i < kAnchorNames.size(); ++i)
-    {
-        kAnchorDxSizes.emplace_back(params["MODEL"]["DENSE_HEAD"]["ANCHOR_GENERATOR_CONFIG"][i]["anchor_sizes"][0][0].as<float>());
-        kAnchorDySizes.emplace_back(params["MODEL"]["DENSE_HEAD"]["ANCHOR_GENERATOR_CONFIG"][i]["anchor_sizes"][0][1].as<float>());
-        kAnchorDzSizes.emplace_back(params["MODEL"]["DENSE_HEAD"]["ANCHOR_GENERATOR_CONFIG"][i]["anchor_sizes"][0][2].as<float>());
-        kAnchorBottom.emplace_back(params["MODEL"]["DENSE_HEAD"]["ANCHOR_GENERATOR_CONFIG"][i]["anchor_bottom_heights"][0].as<float>());
-    }
+    //Adapt to MMdet
+    kDirOffset = params["MODEL"]["DENSE_HEAD"]["DIR_OFFSET"].as<float>();
+    kAnchorSizes = params["MODEL"]["DENSE_HEAD"]["ANCHOR_GENERATOR_CONFIG"]["anchor_sizes"].as<std::vector<std::vector<float>>>();
+    kAnchorBottom = params["MODEL"]["DENSE_HEAD"]["ANCHOR_GENERATOR_CONFIG"]["anchor_bottom_heights"].as<float>();
+    kAnchorRotations = params["MODEL"]["DENSE_HEAD"]["ANCHOR_GENERATOR_CONFIG"]["anchor_rotations"].as<std::vector<float>>();
     for (int idx_head = 0; idx_head < params["MODEL"]["DENSE_HEAD"]["RPN_HEAD_CFGS"].size(); ++idx_head)
     {
         int num_cls_per_head = params["MODEL"]["DENSE_HEAD"]["RPN_HEAD_CFGS"][idx_head]["HEAD_CLS_NAME"].size();
@@ -94,20 +97,33 @@ void PointPillars::InitParams()
         kMultiheadLabelMapping.emplace_back(value);
     }
 
+
     // Generate secondary parameters based on above.
     kGridXSize = static_cast<int>((kMaxXRange - kMinXRange) / kPillarXSize); //512
     kGridYSize = static_cast<int>((kMaxYRange - kMinYRange) / kPillarYSize); //512
     kGridZSize = static_cast<int>((kMaxZRange - kMinZRange) / kPillarZSize); //1
     kRpnInputSize = 64 * kGridYSize * kGridXSize;
 
-    kNumAnchorXinds = static_cast<int>(kGridXSize / kAnchorStrides); //Width
-    kNumAnchorYinds = static_cast<int>(kGridYSize / kAnchorStrides); //Hight
-    kNumAnchor = kNumAnchorXinds * kNumAnchorYinds * 2 * kNumClass;  // H * W * Ro * N = 196608
+    kFeatureSize.clear();
+    int stride = 1;
+    kNumFeature = 0;
+    for (auto s : kLayerStrides) {
+        if (s != 2) {
+            throw std::runtime_error("目前只支持 stride 为 2 的多尺度特征输出");
+        }
+        stride *= s;
+        int fs_x = kGridXSize / stride, fs_y = kGridYSize / stride;
+        kNumFeature += (fs_x * fs_y);
+        kFeatureSize.emplace_back(fs_x, fs_y);
+    }
+        // kNumAnchorXinds = static_cast<int>(kGridXSize / kAnchorStrides); //Width
+    // kNumAnchorYinds = static_cast<int>(kGridYSize / kAnchorStrides); //Hight
+    // kNumAnchor = kNumAnchorXinds * kNumAnchorYinds * 2 * kNumClass;  // H * W * Ro * N = 196608
 
-    kNumAnchorPerCls = kNumAnchorXinds * kNumAnchorYinds * 2; //H * W * Ro = 32768
-    kRpnBoxOutputSize = kNumAnchor * kNumOutputBoxFeature;
-    kRpnClsOutputSize = kNumAnchor * kNumClass;
-    kRpnDirOutputSize = kNumAnchor * 2;
+    // kNumAnchorPerCls = kNumAnchorXinds * kNumAnchorYinds * 2; //H * W * Ro = 32768
+    // kRpnBoxOutputSize = kNumAnchor * kNumOutputBoxFeature;
+    // kRpnClsOutputSize = kNumAnchor * kNumClass;
+    // kRpnDirOutputSize = kNumAnchor * 2;
 }
 
 
@@ -133,6 +149,7 @@ PointPillars::PointPillars(const float score_threshold,
         kMaxNumPillars,
         kMaxNumPointsPerPillar,
         kNumPointFeature,
+        kNumGatherPointFeature,
         kNumIndsForScan,
         kGridXSize,kGridYSize, kGridZSize,
         kPillarXSize,kPillarYSize, kPillarZSize,
@@ -142,19 +159,37 @@ PointPillars::PointPillars(const float score_threshold,
 
     const float float_min = std::numeric_limits<float>::lowest();
     const float float_max = std::numeric_limits<float>::max();
-    postprocess_cuda_ptr_.reset(
-      new PostprocessCuda(kNumThreads,
-                          float_min, float_max, 
-                          kNumClass,kNumAnchorPerCls,
-                          kMultiheadLabelMapping,
-                          score_threshold_, 
-                          nms_overlap_threshold_,
-                          kNmsPreMaxsize, 
-                          kNmsPostMaxsize,
-                          kNumBoxCorners, 
-                          kNumInputBoxFeature,
-                          kNumOutputBoxFeature));  /*kNumOutputBoxFeature*/
-    
+    if (true){
+        postprocess_ptr_.reset(
+            new PostprocessSingleHead(
+                nvtype::Float3(kMinXRange, kMinYRange, kMinZRange),
+                nvtype::Float3(kMaxXRange, kMaxYRange, kMaxZRange),
+                kFeatureSize,
+                kNumClass,
+                kNumFeature,
+                kAnchorSizes,
+                kAnchorBottom,
+                kAnchorRotations,
+                kNumOutputBoxFeature,
+                score_threshold_,
+                kDirOffset,
+                nms_overlap_threshold_
+            )); 
+    }
+    else{
+        postprocess_ptr_.reset(
+            new PostprocessMultiHead(kNumThreads,
+                            float_min, float_max, 
+                            kNumClass,kNumAnchorPerCls,
+                            kMultiheadLabelMapping,
+                            score_threshold_, 
+                            nms_overlap_threshold_,
+                            kNmsPreMaxsize, 
+                            kNmsPostMaxsize,
+                            kNumBoxCorners, 
+                            kNumInputBoxFeature,
+                            kNumOutputBoxFeature));  /*kNumOutputBoxFeature*/
+            }
 }
 
 
@@ -181,22 +216,15 @@ void PointPillars::DeviceMemoryMalloc() {
                                         kNumGatherPointFeature * sizeof(float)));
     GPU_CHECK(cudaMalloc(&pfe_buffers_[1], kMaxNumPillars * 64 * sizeof(float)));
 
-    GPU_CHECK(cudaMalloc(&rpn_buffers_[0],  kRpnInputSize * sizeof(float)));
-
-    GPU_CHECK(cudaMalloc(&rpn_buffers_[1],  kNumAnchorPerCls  * sizeof(float)));  //classes
-    GPU_CHECK(cudaMalloc(&rpn_buffers_[2],  kNumAnchorPerCls  * 2 * 2 * sizeof(float)));
-    GPU_CHECK(cudaMalloc(&rpn_buffers_[3],  kNumAnchorPerCls  * 2 * 2 * sizeof(float)));
-    GPU_CHECK(cudaMalloc(&rpn_buffers_[4],  kNumAnchorPerCls  * sizeof(float)));
-    GPU_CHECK(cudaMalloc(&rpn_buffers_[5],  kNumAnchorPerCls  * 2 * 2 * sizeof(float)));
-    GPU_CHECK(cudaMalloc(&rpn_buffers_[6],  kNumAnchorPerCls  * 2 * 2 * sizeof(float)));
-    
-    GPU_CHECK(cudaMalloc(&rpn_buffers_[7],  kNumAnchorPerCls * kNumClass * kNumOutputBoxFeature * sizeof(float))); //boxes
-
     // for scatter kernel
-    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_scattered_feature_),
-                        kNumThreads * kGridYSize * kGridXSize * sizeof(float)));
+    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_scattered_feature_), kRpnInputSize * sizeof(float)));
 
-    // for filter
+    // for backbone
+    GPU_CHECK(cudaMalloc(&rpn_buffers_[0],  kRpnInputSize * sizeof(float)));
+    GPU_CHECK(cudaMalloc(&rpn_buffers_[1],  kNumFeature * kAnchorSizes.size() * kAnchorRotations.size() * kNumClass * sizeof(float)));  //cls_score
+    GPU_CHECK(cudaMalloc(&rpn_buffers_[2],  kNumFeature * kAnchorSizes.size() * kAnchorRotations.size() * kNumOutputBoxFeature * sizeof(float))); // bbox_pred
+    GPU_CHECK(cudaMalloc(&rpn_buffers_[3],  kNumFeature * kAnchorSizes.size() * kAnchorRotations.size() * 2 * sizeof(float))); // dir_cls_pred
+// for filter
     host_box_ =  new float[kNumAnchorPerCls * kNumClass * kNumOutputBoxFeature]();
     host_score_ =  new float[kNumAnchorPerCls * 18]();
     host_filtered_count_ = new int[kNumClass]();
@@ -220,14 +248,12 @@ PointPillars::~PointPillars() {
     GPU_CHECK(cudaFree(pfe_buffers_[0]));
     GPU_CHECK(cudaFree(pfe_buffers_[1]));
 
+    // TODO: 优化Free方式
     GPU_CHECK(cudaFree(rpn_buffers_[0]));
     GPU_CHECK(cudaFree(rpn_buffers_[1]));
     GPU_CHECK(cudaFree(rpn_buffers_[2]));
     GPU_CHECK(cudaFree(rpn_buffers_[3]));
-    GPU_CHECK(cudaFree(rpn_buffers_[4]));
-    GPU_CHECK(cudaFree(rpn_buffers_[5]));
-    GPU_CHECK(cudaFree(rpn_buffers_[6]));
-    GPU_CHECK(cudaFree(rpn_buffers_[7]));
+
     pfe_context_->destroy();
     backbone_context_->destroy();
     pfe_engine_->destroy();
@@ -363,7 +389,7 @@ void PointPillars::EngineToTRTModel(
 
 }
 
-void PointPillars::DoInference(const float* in_points_array,
+std::vector<BoundingBox> PointPillars::DoInference(const float* in_points_array,
                                 const int in_num_points,
                                 std::vector<float>* out_detections,
                                 std::vector<int>* out_labels,
@@ -387,7 +413,7 @@ void PointPillars::DoInference(const float* in_points_array,
           dev_points, in_num_points, dev_x_coors_, dev_y_coors_,
           dev_num_points_per_pillar_, dev_pillar_point_feature_, dev_pillar_coors_,
           dev_sparse_pillar_map_, host_pillar_count_ ,
-          dev_pfe_gather_feature_ );
+          dev_pfe_gather_feature_);
     cudaDeviceSynchronize();
     auto preprocess_end = std::chrono::high_resolution_clock::now();
     // DEVICE_SAVE<float>(dev_pfe_gather_feature_,  kMaxNumPillars * kMaxNumPointsPerPillar * kNumGatherPointFeature  , "0_Model_pfe_input_gather_feature");
@@ -401,6 +427,7 @@ void PointPillars::DoInference(const float* in_points_array,
                             cudaMemcpyDeviceToDevice, stream));
     pfe_context_->enqueueV2(pfe_buffers_, stream, nullptr);
     cudaDeviceSynchronize();
+
     auto pfe_end = std::chrono::high_resolution_clock::now();
     // DEVICE_SAVE<float>(reinterpret_cast<float*>(pfe_buffers_[1]),  kMaxNumPillars * 64 , "1_Model_pfe_output_buffers_[1]");
 
@@ -410,32 +437,38 @@ void PointPillars::DoInference(const float* in_points_array,
         host_pillar_count_[0], dev_x_coors_, dev_y_coors_,
         reinterpret_cast<float*>(pfe_buffers_[1]), dev_scattered_feature_);
     cudaDeviceSynchronize();
-    auto scatter_end = std::chrono::high_resolution_clock::now();   
+        auto scatter_end = std::chrono::high_resolution_clock::now();   
     // DEVICE_SAVE<float>(dev_scattered_feature_ ,  kRpnInputSize,"2_Model_backbone_input_dev_scattered_feature");
 
     // [STEP 5] : backbone forward
     auto backbone_start = std::chrono::high_resolution_clock::now();
+
     GPU_CHECK(cudaMemcpyAsync(rpn_buffers_[0], dev_scattered_feature_,
-                            kBatchSize * kRpnInputSize * sizeof(float),
-                            cudaMemcpyDeviceToDevice, stream));
+                            kRpnInputSize * sizeof(float), cudaMemcpyDeviceToDevice, stream));
+
     backbone_context_->enqueueV2(rpn_buffers_, stream, nullptr);
     cudaDeviceSynchronize();
     auto backbone_end = std::chrono::high_resolution_clock::now();
 
     // [STEP 6]: postprocess (multihead)
     auto postprocess_start = std::chrono::high_resolution_clock::now();
-    postprocess_cuda_ptr_->DoPostprocessCuda(
+    // postprocess_ptr_->DoPostprocess(
+    //     reinterpret_cast<float*>(rpn_buffers_[1]), // [cls]   kNumAnchorPerCls 
+    //     reinterpret_cast<float*>(rpn_buffers_[2]), // [cls]   kNumAnchorPerCls * 2 * 2
+    //     reinterpret_cast<float*>(rpn_buffers_[3]), // [cls]   kNumAnchorPerCls * 2 * 2
+    //     reinterpret_cast<float*>(rpn_buffers_[4]), // [cls]   kNumAnchorPerCls 
+    //     reinterpret_cast<float*>(rpn_buffers_[5]), // [cls]   kNumAnchorPerCls * 2 * 2
+    //     reinterpret_cast<float*>(rpn_buffers_[6]), // [cls]   kNumAnchorPerCls * 2 * 2
+    //     reinterpret_cast<float*>(rpn_buffers_[7]), // [boxes] kNumAnchorPerCls * kNumClass * kNumOutputBoxFeature
+    //     host_box_, 
+    //     host_score_, 
+    //     host_filtered_count_,
+    //     *out_detections, *out_labels , *out_scores);
+    postprocess_ptr_->DoPostprocess(
         reinterpret_cast<float*>(rpn_buffers_[1]), // [cls]   kNumAnchorPerCls 
         reinterpret_cast<float*>(rpn_buffers_[2]), // [cls]   kNumAnchorPerCls * 2 * 2
         reinterpret_cast<float*>(rpn_buffers_[3]), // [cls]   kNumAnchorPerCls * 2 * 2
-        reinterpret_cast<float*>(rpn_buffers_[4]), // [cls]   kNumAnchorPerCls 
-        reinterpret_cast<float*>(rpn_buffers_[5]), // [cls]   kNumAnchorPerCls * 2 * 2
-        reinterpret_cast<float*>(rpn_buffers_[6]), // [cls]   kNumAnchorPerCls * 2 * 2
-        reinterpret_cast<float*>(rpn_buffers_[7]), // [boxes] kNumAnchorPerCls * kNumClass * kNumOutputBoxFeature
-        host_box_, 
-        host_score_, 
-        host_filtered_count_,
-        *out_detections, *out_labels , *out_scores);
+        stream);
     cudaDeviceSynchronize();
     auto postprocess_end = std::chrono::high_resolution_clock::now();
 
@@ -458,5 +491,6 @@ void PointPillars::DoInference(const float* in_points_array,
     }
     std::cout << "------------------------------------" << std::endl;
     cudaStreamDestroy(stream);
+    return this->postprocess_ptr_->bndBoxVec();
 
 }

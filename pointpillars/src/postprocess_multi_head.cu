@@ -44,6 +44,7 @@
 
 // headers in CUDA
 #include <thrust/sort.h>
+#include <cmath>  // for expf
 
 // headers in local files
 #include "common.h"
@@ -87,34 +88,39 @@ void quicksort_kernel(float* score, int* indexes, int len )
 
 
 
-PostprocessCuda::PostprocessCuda(const int num_threads, const float float_min, const float float_max,
-    const int num_class,const int num_anchor_per_cls,
+PostprocessMultiHead::PostprocessMultiHead(
+    const int num_threads,
+    const float float_min,
+    const float float_max,
+    const int num_class,
+    const int num_anchor_per_cls,
     const std::vector<std::vector<int>> multihead_label_mapping,
-    const float score_threshold,  const float nms_overlap_threshold, 
-    const int nms_pre_maxsize, const int nms_post_maxsize,
-    const int num_box_corners, 
+    const float score_threshold,
+    const float nms_overlap_threshold,
+    const int nms_pre_maxsize,
+    const int nms_post_maxsize,
+    const int num_box_corners,
     const int num_input_box_feature,
     const int num_output_box_feature)
-: num_threads_(num_threads),
-  float_min_(float_min),
-  float_max_(float_max),
-  num_class_(num_class),
-  num_anchor_per_cls_(num_anchor_per_cls),
-  multihead_label_mapping_(multihead_label_mapping),
-  score_threshold_(score_threshold),
-  nms_overlap_threshold_(nms_overlap_threshold),
-  nms_pre_maxsize_(nms_pre_maxsize),
-  nms_post_maxsize_(nms_post_maxsize),
-  num_box_corners_(num_box_corners),
-  num_input_box_feature_(num_input_box_feature),
-  num_output_box_feature_(num_output_box_feature) {
-    nms_cuda_ptr_.reset(
-    new NmsCuda(num_threads_, num_box_corners_, nms_overlap_threshold_));
-
+    : num_threads_(num_threads),
+      float_min_(float_min),
+      float_max_(float_max),
+      num_class_(num_class),
+      num_anchor_per_cls_(num_anchor_per_cls),
+      multihead_label_mapping_(multihead_label_mapping),
+      score_threshold_(score_threshold),
+      nms_overlap_threshold_(nms_overlap_threshold),
+      nms_pre_maxsize_(nms_pre_maxsize),
+      nms_post_maxsize_(nms_post_maxsize),
+      num_box_corners_(num_box_corners),
+      num_input_box_feature_(num_input_box_feature),
+      num_output_box_feature_(num_output_box_feature) {
+  nms_cuda_ptr_.reset(
+      new NmsCuda(num_threads_, num_box_corners_, nms_overlap_threshold_));
 }
 
 
-void PostprocessCuda::DoPostprocessCuda(
+void PostprocessMultiHead::DoPostprocess(
     float* cls_pred_0,
     float* cls_pred_12,
     float* cls_pred_34,
@@ -275,39 +281,4 @@ void PostprocessCuda::DoPostprocessCuda(
         GPU_CHECK(cudaFree(dev_sorted_filtered_score));
     }
 }
-
-
-
-
-
-// void PostprocessCuda::DoPostprocessCuda(
-//     float* cls_pred_0,
-//     float* cls_pred_12,
-//     float* cls_pred_34,
-//     float* cls_pred_5,
-//     float* cls_pred_67,
-//     float* cls_pred_89,
-
-//     const float* box_preds,
-   
-//     float* dev_filtered_box, 
-//     float* dev_filtered_score, 
-//     int* dev_filter_count,
-//     std::vector<float>& out_detection, std::vector<int>& out_label , std::vector<float>& out_score) {
-
-
-//     // GPU_CHECK(cudaMemcpy(&host_score[0 * 32768], cls_pred_0, num_anchor_per_cls_ * sizeof(float), cudaMemcpyDeviceToHost));
-//     // GPU_CHECK(cudaMemcpy(&host_score[1 * 32768], cls_pred_12, num_anchor_per_cls_ * sizeof(float), cudaMemcpyDeviceToHost));
-//     // GPU_CHECK(cudaMemcpy(&host_score[2 * 32768], cls_pred_34, num_anchor_per_cls_ * sizeof(float), cudaMemcpyDeviceToHost));
-//     // GPU_CHECK(cudaMemcpy(&host_score[3 * 32768], cls_pred_5, num_anchor_per_cls_ * sizeof(float), cudaMemcpyDeviceToHost));
-//     // GPU_CHECK(cudaMemcpy(&host_score[4 * 32768], cls_pred_5, num_anchor_per_cls_ * sizeof(float), cudaMemcpyDeviceToHost));
-//     // GPU_CHECK(cudaMemcpy(&host_score[5 * 32768], cls_pred_67, num_anchor_per_cls_ * sizeof(float), cudaMemcpyDeviceToHost));
-//     // GPU_CHECK(cudaMemcpy(&host_score[6 * 32768], cls_pred_89, num_anchor_per_cls_ * sizeof(float), cudaMemcpyDeviceToHost));
-
-//     // GPU_CHECK(cudaMemcpy(host_box, box_preds, num_class_ * num_anchor_per_cls_ * num_input_box_feature_ * sizeof(float), cudaMemcpyDeviceToHost));
-
-
-
-
-// }
 

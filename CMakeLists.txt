@@ -1,8 +1,11 @@
 cmake_minimum_required(VERSION 3.17)
 
+set(CMAKE_CUDA_STANDARD 14)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 cmake_policy(SET CMP0048 NEW)
 cmake_policy(SET CMP0042 NEW)
-project(pointpillars) 
+project(pointpillars LANGUAGES CXX CUDA)
 
 
 option(BUILD_SHARED_LIBS "Build as a shared library"  ON)

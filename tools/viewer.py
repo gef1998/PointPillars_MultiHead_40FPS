@@ -22,8 +22,8 @@ def cfg_from_yaml_file(cfg_file, config):
 
 
 def dataloader(cloud_path , boxes_path):
-    cloud = np.loadtxt(cloud_path).reshape(-1,5)
-    boxes = np.loadtxt(boxes_path).reshape(-1,7)
+    cloud = np.fromfile(cloud_path, dtype=np.float32).reshape(-1,4)
+    boxes = np.loadtxt(boxes_path).reshape(-1,9)
     return cloud , boxes 
 
 if __name__ == "__main__":

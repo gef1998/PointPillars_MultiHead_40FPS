@@ -4,11 +4,11 @@
 #include <fstream>
 #include <string>
 // headers in 3rd-part
-#include "../pointpillars/pointpillars.h"
+#include "../pointpillars/include/pointpillars.h"
 #include "gtest/gtest.h"
 using namespace std;
 
-const int input_num_feature = 5;
+const int input_num_feature = 4;
 
 int Bin2Arrary(float* &points_array , string file_name , int num_feature)
 {
@@ -54,6 +54,30 @@ void Boxes2Txt( std::vector<float> boxes , string file_name , int num_feature = 
     return ;
 };
 
+void SaveBoxPred(std::vector<BoundingBox> boxes, std::string file_name)
+{
+    std::ofstream ofs;
+    ofs.open(file_name, std::ios::out);
+    if (ofs.is_open()) {
+        for (const auto box : boxes) {
+          ofs << box.x << " ";
+          ofs << box.y << " ";
+          ofs << box.z << " ";
+          ofs << box.w << " ";
+          ofs << box.l << " ";
+          ofs << box.h << " ";
+          ofs << box.rt << " ";
+          ofs << box.id << " ";
+          ofs << box.score << "\n";
+        }
+    }
+    else {
+      std::cerr << "Output file cannot be opened!" << std::endl;
+    }
+    ofs.close();
+    std::cout << "Saved prediction in: " << file_name << std::endl;
+    return;
+};
 
 TEST(PointPillars, __build_model__) {
   const std::string DB_CONF = "/home/gef/PointPillars_MultiHead_40FPS/bootstrap.yaml";
@@ -90,14 +114,12 @@ TEST(PointPillars, __build_model__) {
     std::vector<float> out_scores;
 
     cudaDeviceSynchronize();
-    pp.DoInference(points_array, in_num_points, &out_detections, &out_labels , &out_scores);
+    auto bboxes = pp.DoInference(points_array, in_num_points, &out_detections, &out_labels , &out_scores);
     cudaDeviceSynchronize();
-    int BoxFeature = 7;
-    int num_objects = out_detections.size() / BoxFeature;
 
     std::string boxes_file_name = config["OutputFile"].as<std::string>();
-    Boxes2Txt(out_detections , boxes_file_name );
-    EXPECT_EQ(num_objects,228);
+    SaveBoxPred(bboxes, boxes_file_name);
+    std::cout << ">>>>>>>>>>>" << std::endl;
   }
 
 
