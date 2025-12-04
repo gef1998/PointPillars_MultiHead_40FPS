@@ -15,6 +15,12 @@ target_include_directories(${PROJECT_LIB_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+find_package(pybind11 REQUIRED)
+pybind11_add_module(pointpillars_py src/pointpillars_pybind.cpp)
+target_link_libraries(pointpillars_py PRIVATE ${PROJECT_LIB_NAME})
+target_include_directories(pointpillars_py PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
 # Export the package for use from the build tree
 # export(TARGETS ${PROJECT_NAME} NAMESPACE XComp:: FILE cmake/${PROJECT_NAME}Targets.cmake)
 # export(PACKAGE ${PROJECT_NAME})

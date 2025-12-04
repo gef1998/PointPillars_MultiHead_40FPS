@@ -561,12 +561,11 @@ void PostprocessSingleHead::DoPostprocess(const float* cls, const float* box, co
     thrust::device_ptr<combined_float> thr_bndbox_((combined_float *)bndbox_);
     thrust::sort_by_key(thrust::cuda::par.on(_stream), score_, score_ + bndbox_num_, thr_bndbox_, thrust::greater<float>());
 
-    int nms_pre_maxsize_ = 500; //TODO 参数化
+    int nms_pre_maxsize_ = 1000; //TODO 参数化
     bndbox_num_ = min(nms_pre_maxsize_, bndbox_num_);
     uint64_t *dev_mask = nullptr;
     unsigned int mask_size = bndbox_num_ * DIVUP(bndbox_num_, NMS_THREADS_PER_BLOCK) * sizeof(uint64_t);
     GPU_CHECK(cudaMalloc(&dev_mask, mask_size));    
-
 
     checkRuntime(nms_launch(bndbox_num_, bndbox_, nms_thresh_, dev_mask, _stream));
     checkRuntime(cudaMemcpy(h_bndbox_, bndbox_, bndbox_num_ * 9 * sizeof(float), cudaMemcpyDeviceToHost));
