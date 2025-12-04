@@ -46,19 +46,11 @@ PYBIND11_MODULE(pointpillars_py, m) {
 
                  const float *ptr = static_cast<const float *>(buf.ptr);
 
-                 // Output vectors
-                 std::vector<float> out_detections;
-                 std::vector<int> out_labels;
-                 std::vector<float> out_scores;
-
                  // --- call C++ inference (zero-copy) ---
-                 auto boxes = self.DoInference(
-                     ptr, in_num_points,
-                     &out_detections, &out_labels, &out_scores
-                 );
+                 auto boxes = self.DoInference(ptr, in_num_points);
 
                  // Python 返回: Tuple( List[BoundingBox], List[float], List[int], List[float] )
-                 return py::make_tuple(boxes, out_detections, out_labels, out_scores);
+                 return boxes;
              },
              py::arg("points"));
 }

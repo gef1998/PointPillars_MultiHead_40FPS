@@ -109,12 +109,9 @@ TEST(PointPillars, __build_model__) {
   
   for (int _ = 0 ; _ < 10 ; _++)
   {
-    std::vector<float> out_detections;
-    std::vector<int> out_labels;
-    std::vector<float> out_scores;
 
     cudaDeviceSynchronize();
-    auto bboxes = pp.DoInference(points_array, in_num_points, &out_detections, &out_labels , &out_scores);
+    auto bboxes = pp.DoInference(points_array, in_num_points);
     cudaDeviceSynchronize();
 
     std::string boxes_file_name = config["OutputFile"].as<std::string>();

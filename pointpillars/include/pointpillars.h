@@ -175,7 +175,7 @@ class PointPillars {
     int kLenPerAnchor;
 
     std::vector<std::vector<int>> kMultiheadLabelMapping;
-    int kNumAnchorPerCls;
+    // int kNumAnchorPerCls;
     int host_pillar_count_[1];
 
     int* dev_x_coors_;
@@ -194,21 +194,7 @@ class PointPillars {
     //variable for doPostprocessCudaMultiHead
     void* rpn_buffers_[4];
     
-    std::vector<float*> rpn_box_output_; 
-    std::vector<float*> rpn_cls_output_;
-
     float* dev_scattered_feature_;
-
-    float* host_box_;
-    float* host_score_;
-    int*   host_filtered_count_;
-
-    // float* dev_filtered_box_;
-    // float* dev_filtered_score_;
-    // int*   dev_filtered_label_;
-    // int*   dev_filtered_dir_;
-    // float* dev_box_for_nms_;
-    // int*   dev_filter_count_;
 
     std::unique_ptr<PreprocessPointsCuda> preprocess_points_cuda_ptr_;
     std::unique_ptr<ScatterCuda> scatter_cuda_ptr_;
@@ -291,14 +277,9 @@ class PointPillars {
      * @brief Call PointPillars for the inference
      * @param[in] in_points_array Point cloud array
      * @param[in] in_num_points Number of points
-     * @param[out] out_detections Network output bounding box
-     * @param[out] out_labels Network output object's label
      * @details This is an interface for the algorithm
      */
     std::vector<BoundingBox> DoInference(const float* in_points_array,
-                    const int in_num_points,
-                    std::vector<float>* out_detections,
-                    std::vector<int>* out_labels,
-                    std::vector<float>* out_scores);
+                    const int in_num_points);
 };
 

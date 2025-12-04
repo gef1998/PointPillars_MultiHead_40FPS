@@ -218,18 +218,6 @@ class PostprocessSingleHead : public Postprocess {
   std::vector<std::vector<float>> anchors_host_;
   std::vector<float> rotations_host_;
 
-  // int num_classes_ = 10;
-  // int num_anchors_ = 8;
-  // float anchors_[12] = {
-  //     2.5981, 0.8660, 1.,
-  //     1.7321, 0.5774, 1.,
-  //     1., 1., 1.,
-  //     0.4, 0.4, 1.};
-  // int num_box_values_ = 9;
-  // float score_thresh_ = 0.1;
-  // float dir_offset_ = 0.7854;
-  // float nms_thresh_ = 0.01;
-
   float* anchors_dev_ = nullptr;
   float* rotations_dev_ = nullptr;
   float anchor_bottom_;

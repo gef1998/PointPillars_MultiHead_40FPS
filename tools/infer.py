@@ -47,10 +47,9 @@ def save_bev(cloud, boxes, save_path="bev.png",
 score_threshold = 0.1
 nms_overlap_threshold = 0.2
 use_onnx_bool = False
-pfe_file = "/data/gef/PointPillars_MultiHead_40FPS/model/test_pfe.trt"
-rpn_file = "/data/gef/PointPillars_MultiHead_40FPS/model/test_backbone.trt"
-cfg_yaml_path = "/data/gef/PointPillars_MultiHead_40FPS/pointpillars/cfgs/pointpillars_hv_fpn_sbn-all_8xb4-2x_nus-3d.yaml"
-
+pfe_file = '/home/gef/PointPillars_MultiHead_40FPS/model/test_pfe.trt'
+rpn_file = '/home/gef/PointPillars_MultiHead_40FPS/model/test_backbone.trt'
+cfg_yaml_path = '/home/gef/PointPillars_MultiHead_40FPS/pointpillars/cfgs/pointpillars_hv_fpn_sbn-all_8xb4-2x_nus-3d.yaml'
 
 # 初始化（参数与C++构造一致）
 pp = pointpillars_py.PointPillars(
@@ -63,14 +62,9 @@ pp = pointpillars_py.PointPillars(
 )
 
 points = np.fromfile("/data/gef/PointPillars_MultiHead_40FPS/tmp/test.bin", dtype=np.float32).reshape(-1, 4)
-in_num_points = len(points)# 点特征数（如5）
-
-print("points shape:", np.array(points).shape)
-print("in_num_points:", in_num_points)
-print("points[:10]:", points[:10])  # 看首10个值
-
+in_num_points = len(points) 
 for _ in range(10):
     # 推理
-    boxes, out_detections, out_labels, out_scores = pp.DoInference(points)
+    boxes = pp.DoInference(points)
     save_bev(points, boxes)
 

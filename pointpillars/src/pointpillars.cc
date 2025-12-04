@@ -143,7 +143,6 @@ PointPillars::PointPillars(const float score_threshold,
     InitParams();
     InitTRT(use_onnx_);
     DeviceMemoryMalloc();
-
     preprocess_points_cuda_ptr_.reset(new PreprocessPointsCuda(
         kNumThreads,
         kMaxNumPillars,
@@ -157,39 +156,35 @@ PointPillars::PointPillars(const float score_threshold,
 
     scatter_cuda_ptr_.reset(new ScatterCuda(kNumThreads, kGridXSize, kGridYSize));
 
-    const float float_min = std::numeric_limits<float>::lowest();
-    const float float_max = std::numeric_limits<float>::max();
-    if (true){
-        postprocess_ptr_.reset(
-            new PostprocessSingleHead(
-                nvtype::Float3(kMinXRange, kMinYRange, kMinZRange),
-                nvtype::Float3(kMaxXRange, kMaxYRange, kMaxZRange),
-                kFeatureSize,
-                kNumClass,
-                kNumFeature,
-                kAnchorSizes,
-                kAnchorBottom,
-                kAnchorRotations,
-                kNumOutputBoxFeature,
-                score_threshold_,
-                kDirOffset,
-                nms_overlap_threshold_
-            )); 
-    }
-    else{
-        postprocess_ptr_.reset(
-            new PostprocessMultiHead(kNumThreads,
-                            float_min, float_max, 
-                            kNumClass,kNumAnchorPerCls,
-                            kMultiheadLabelMapping,
-                            score_threshold_, 
-                            nms_overlap_threshold_,
-                            kNmsPreMaxsize, 
-                            kNmsPostMaxsize,
-                            kNumBoxCorners, 
-                            kNumInputBoxFeature,
-                            kNumOutputBoxFeature));  /*kNumOutputBoxFeature*/
-            }
+    // const float float_min = std::numeric_limits<float>::lowest();
+    // const float float_max = std::numeric_limits<float>::max();
+    postprocess_ptr_.reset(
+        new PostprocessSingleHead(
+            nvtype::Float3(kMinXRange, kMinYRange, kMinZRange),
+            nvtype::Float3(kMaxXRange, kMaxYRange, kMaxZRange),
+            kFeatureSize,
+            kNumClass,
+            kNumFeature,
+            kAnchorSizes,
+            kAnchorBottom,
+            kAnchorRotations,
+            kNumOutputBoxFeature,
+            score_threshold_,
+            kDirOffset,
+            nms_overlap_threshold_
+        )); 
+        // postprocess_ptr_.reset(
+        // new PostprocessMultiHead(kNumThreads,
+        //                 float_min, float_max, 
+        //                 kNumClass,kNumAnchorPerCls,
+        //                 kMultiheadLabelMapping,
+        //                 score_threshold_, 
+        //                 nms_overlap_threshold_,
+        //                 kNmsPreMaxsize, 
+        //                 kNmsPostMaxsize,
+        //                 kNumBoxCorners, 
+        //                 kNumInputBoxFeature,
+        //                 kNumOutputBoxFeature));  /*kNumOutputBoxFeature*/
 }
 
 
@@ -200,6 +195,7 @@ void PointPillars::DeviceMemoryMalloc() {
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_y_coors_), kMaxNumPillars * sizeof(int))); // M
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_pillar_point_feature_), kMaxNumPillars * kMaxNumPointsPerPillar * kNumPointFeature * sizeof(float))); // [M , m , 4]
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_pillar_coors_),  kMaxNumPillars * 4 * sizeof(float))); // [M , 4]
+
     // for sparse map
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_sparse_pillar_map_), kNumIndsForScan * kNumIndsForScan * sizeof(int))); // [1024 , 1024]
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_cumsum_along_x_), kNumIndsForScan * kNumIndsForScan * sizeof(int))); // [1024 , 1024]
@@ -208,6 +204,7 @@ void PointPillars::DeviceMemoryMalloc() {
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_pfe_gather_feature_),
                         kMaxNumPillars * kMaxNumPointsPerPillar *
                             kNumGatherPointFeature * sizeof(float)));
+
     // for trt inference
     // create GPU buffers and a stream
 
@@ -224,10 +221,6 @@ void PointPillars::DeviceMemoryMalloc() {
     GPU_CHECK(cudaMalloc(&rpn_buffers_[1],  kNumFeature * kAnchorSizes.size() * kAnchorRotations.size() * kNumClass * sizeof(float)));  //cls_score
     GPU_CHECK(cudaMalloc(&rpn_buffers_[2],  kNumFeature * kAnchorSizes.size() * kAnchorRotations.size() * kNumOutputBoxFeature * sizeof(float))); // bbox_pred
     GPU_CHECK(cudaMalloc(&rpn_buffers_[3],  kNumFeature * kAnchorSizes.size() * kAnchorRotations.size() * 2 * sizeof(float))); // dir_cls_pred
-// for filter
-    host_box_ =  new float[kNumAnchorPerCls * kNumClass * kNumOutputBoxFeature]();
-    host_score_ =  new float[kNumAnchorPerCls * 18]();
-    host_filtered_count_ = new int[kNumClass]();
 }
 
 
@@ -260,10 +253,6 @@ PointPillars::~PointPillars() {
     backbone_engine_->destroy();
     // for post process
     GPU_CHECK(cudaFree(dev_scattered_feature_));
-    delete[] host_box_;
-    delete[] host_score_;
-    delete[] host_filtered_count_;
-
 }
 
 
@@ -389,11 +378,7 @@ void PointPillars::EngineToTRTModel(
 
 }
 
-std::vector<BoundingBox> PointPillars::DoInference(const float* in_points_array,
-                                const int in_num_points,
-                                std::vector<float>* out_detections,
-                                std::vector<int>* out_labels,
-                                std::vector<float>* out_scores) 
+std::vector<BoundingBox> PointPillars::DoInference(const float* in_points_array, const int in_num_points) 
 {
     SetDeviceMemoryToZero();
     cudaDeviceSynchronize();
@@ -452,22 +437,10 @@ std::vector<BoundingBox> PointPillars::DoInference(const float* in_points_array,
 
     // [STEP 6]: postprocess (multihead)
     auto postprocess_start = std::chrono::high_resolution_clock::now();
-    // postprocess_ptr_->DoPostprocess(
-    //     reinterpret_cast<float*>(rpn_buffers_[1]), // [cls]   kNumAnchorPerCls 
-    //     reinterpret_cast<float*>(rpn_buffers_[2]), // [cls]   kNumAnchorPerCls * 2 * 2
-    //     reinterpret_cast<float*>(rpn_buffers_[3]), // [cls]   kNumAnchorPerCls * 2 * 2
-    //     reinterpret_cast<float*>(rpn_buffers_[4]), // [cls]   kNumAnchorPerCls 
-    //     reinterpret_cast<float*>(rpn_buffers_[5]), // [cls]   kNumAnchorPerCls * 2 * 2
-    //     reinterpret_cast<float*>(rpn_buffers_[6]), // [cls]   kNumAnchorPerCls * 2 * 2
-    //     reinterpret_cast<float*>(rpn_buffers_[7]), // [boxes] kNumAnchorPerCls * kNumClass * kNumOutputBoxFeature
-    //     host_box_, 
-    //     host_score_, 
-    //     host_filtered_count_,
-    //     *out_detections, *out_labels , *out_scores);
     postprocess_ptr_->DoPostprocess(
-        reinterpret_cast<float*>(rpn_buffers_[1]), // [cls]   kNumAnchorPerCls 
-        reinterpret_cast<float*>(rpn_buffers_[2]), // [cls]   kNumAnchorPerCls * 2 * 2
-        reinterpret_cast<float*>(rpn_buffers_[3]), // [cls]   kNumAnchorPerCls * 2 * 2
+        reinterpret_cast<float*>(rpn_buffers_[1]), //cls_score
+        reinterpret_cast<float*>(rpn_buffers_[2]),  // bbox_pred
+        reinterpret_cast<float*>(rpn_buffers_[3]), // dir_cls_pred   
         stream);
     cudaDeviceSynchronize();
     auto postprocess_end = std::chrono::high_resolution_clock::now();
