@@ -64,6 +64,9 @@ void PointPillars::InitParams()
     kMaxNumPillars = params["DATA_CONFIG"]["DATA_PROCESSOR"][2]["MAX_NUMBER_OF_VOXELS"]["test"].as<int>();
     kMaxNumPointsPerPillar = params["DATA_CONFIG"]["DATA_PROCESSOR"][2]["MAX_POINTS_PER_VOXEL"].as<int>();
     kNumPointFeature = params["DATA_CONFIG"]["DATA_PROCESSOR"][2]["kNumPointFeature"].as<int>();
+    if (kNumPointFeature != 4) {
+        throw std::runtime_error("目前只支持kNumPointFeature为 4 的实现");
+    }
     kNumGatherPointFeature = kNumPointFeature;
     if (params["DATA_CONFIG"]["DATA_PROCESSOR"][2]["with_cluster_center"].as<bool>())
         kNumGatherPointFeature += 3;

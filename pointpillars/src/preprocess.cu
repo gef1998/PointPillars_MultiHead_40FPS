@@ -75,11 +75,11 @@ __global__ void make_pillar_histo_kernel(
           y_coor * grid_x_size * max_points_per_pillar * num_point_feature +
           x_coor * max_points_per_pillar * num_point_feature +
           count * num_point_feature;
- 
-      for (int i = 0; i < num_point_feature; ++i) {
-        dev_pillar_point_feature_in_coors[ind + i] =
-            dev_points[th_i * num_point_feature + i];
-      }
+      // TODO: 只支持num_point_feature=4的实现
+      dev_pillar_point_feature_in_coors[ind] = dev_points[th_i * num_point_feature];
+      dev_pillar_point_feature_in_coors[ind + 1] = dev_points[th_i * num_point_feature + 1];
+      dev_pillar_point_feature_in_coors[ind + 2] = dev_points[th_i * num_point_feature + 2];
+      dev_pillar_point_feature_in_coors[ind + 3] = dev_points[th_i * num_point_feature + 3] / 255.0f;
     }
   }
 }
