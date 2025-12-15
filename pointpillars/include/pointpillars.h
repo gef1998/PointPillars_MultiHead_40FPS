@@ -177,7 +177,6 @@ class PointPillars {
     std::vector<std::vector<int>> kMultiheadLabelMapping;
     // int kNumAnchorPerCls;
     int host_pillar_count_[1];
-
     int* dev_x_coors_;
     int* dev_y_coors_;
     float* dev_num_points_per_pillar_;

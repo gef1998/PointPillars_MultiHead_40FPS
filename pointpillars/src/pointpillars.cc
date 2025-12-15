@@ -467,6 +467,8 @@ std::vector<BoundingBox> PointPillars::DoInference(const float* in_points_array,
     }
     std::cout << "------------------------------------" << std::endl;
     cudaStreamDestroy(stream);
+    GPU_CHECK(cudaFree(dev_points));
+
     return this->postprocess_ptr_->bndBoxVec();
 
 }

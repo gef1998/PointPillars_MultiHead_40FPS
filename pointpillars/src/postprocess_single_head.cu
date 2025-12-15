@@ -588,6 +588,7 @@ void PostprocessSingleHead::DoPostprocess(const float* cls, const float* box, co
             }
         }
     }
+    GPU_CHECK(cudaFree(dev_mask));
 }
 
 PostprocessSingleHead::~PostprocessSingleHead() {
