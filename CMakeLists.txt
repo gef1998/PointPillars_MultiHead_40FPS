@@ -1,4 +1,7 @@
 cmake_minimum_required(VERSION 3.17)
+set(CATKIN_ENABLE_TESTING OFF)
+set(GTEST_FOUND OFF CACHE BOOL "" FORCE)
+
 
 set(CMAKE_CUDA_STANDARD 14)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -19,6 +22,35 @@ endif()
 if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif ()
+############################################################
+# add ROS nodes
+#############################################################
+set(PYTHON_EXECUTABLE /usr/bin/python) 
+find_package(catkin REQUIRED COMPONENTS
+    roscpp
+    sensor_msgs
+    autoware_msgs
+    geometry_msgs
+    tf
+)
+include_directories(${catkin_INCLUDE_DIRS})
+
+
+add_executable(pc_infer
+    nodes/pc_infer.cc
+    nodes/det3d_publisher.cc
+)
+target_link_libraries(pc_infer
+    ${PROJECT_LIB_NAME}
+    ${LINK_LIBRARY}
+    ${catkin_LIBRARIES}
+    pointpillars
+)
+target_include_directories(pc_infer PRIVATE
+    ${catkin_INCLUDE_DIRS}
+    ${PROJECT_SOURCE_DIR}/pointpillars/include
+)
+
 
 ############################################################
 # add 3th_part library

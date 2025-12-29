@@ -16,7 +16,10 @@ target_include_directories(${PROJECT_LIB_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+# set(pybind11_DIR "/usr/local/share/cmake/pybind11")
 find_package(pybind11 REQUIRED)
+
 pybind11_add_module(pointpillars_py src/pointpillars_pybind.cpp)
 target_link_libraries(pointpillars_py PRIVATE ${PROJECT_LIB_NAME})
 target_include_directories(pointpillars_py PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)

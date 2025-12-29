@@ -21,3 +21,6 @@ projects/
 *.npy
 .vscode/
 *.vsix
+gtest
+*.mp4
+*.bag
