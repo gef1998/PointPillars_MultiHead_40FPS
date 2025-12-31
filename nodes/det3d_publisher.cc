@@ -68,7 +68,7 @@ void Det3DPublisher::loadClassNames() {
 
 void Det3DPublisher::pointCloudCallback(
     const sensor_msgs::PointCloud2ConstPtr& msg) {
-      if (!detector_) {
+       if (!detector_) {
         ROS_ERROR_THROTTLE(1.0, "PointPillars 未初始化");
         return;
     }
@@ -85,13 +85,14 @@ void Det3DPublisher::pointCloudCallback(
         sensor_msgs::PointCloud2ConstIterator<float> iter_x(*msg, "x");
         sensor_msgs::PointCloud2ConstIterator<float> iter_y(*msg, "y");
         sensor_msgs::PointCloud2ConstIterator<float> iter_z(*msg, "z");
-        sensor_msgs::PointCloud2ConstIterator<float> iter_intensity(*msg, "intensity");
+        // sensor_msgs::PointCloud2ConstIterator<float> iter_intensity(*msg, "intensity");
 
-        for (; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z, ++iter_intensity) {
+        for (; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z) {
             points.emplace_back(*iter_x);
             points.emplace_back(*iter_y);
             points.emplace_back(*iter_z);
-            points.emplace_back(*iter_intensity);
+            points.emplace_back(0);
+            // points.emplace_back(*iter_intensity);
         }
     } catch (const std::exception& e) {
         ROS_ERROR_STREAM_THROTTLE(1.0, "解析点云失败: " << e.what());

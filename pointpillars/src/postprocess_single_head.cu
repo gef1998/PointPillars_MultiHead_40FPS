@@ -204,7 +204,7 @@ __global__ void postprocess_kernal_long(const float* cls_input,
   if (max_score >= score_thresh)
   {
     
-    // OPTIMIZE:这里把rotations的size定死了，若改变rotation的size，则失效
+    // OPTIMIZE: 这里把rotations的size定死了，若改变rotation的size，则失效
     const float *anchor_ptr = anchors + (ith_anchor >> 1) * 3; // 3为prior_w, prior_l, prior_h
     float wa = anchor_ptr[0];
     float la = anchor_ptr[1];
