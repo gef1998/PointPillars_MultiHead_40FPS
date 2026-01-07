@@ -71,7 +71,6 @@ class PreprocessPointsCuda {
     int* dev_pillar_count_histo_;
 
     int* dev_counter_;
-    int* dev_pillar_count_;
     float* dev_points_mean_;
 
 

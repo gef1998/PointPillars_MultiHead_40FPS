@@ -85,8 +85,8 @@ __global__ void make_pillar_histo_kernel(
 }
 
 __global__ void make_pillar_index_kernel(
-    int* dev_pillar_count_histo, int* dev_counter, int* dev_pillar_count,
-    int* dev_x_coors, int* dev_y_coors, float* dev_num_points_per_pillar,
+    int* dev_pillar_count_histo, int* dev_counter,  int* dev_x_coors,
+    int* dev_y_coors, float* dev_num_points_per_pillar,
     int* dev_sparse_pillar_map, const int max_pillars,
     const int max_points_per_pillar, const int grid_x_size,
     const int num_inds_for_scan) {
@@ -99,15 +99,12 @@ __global__ void make_pillar_index_kernel(
 
   int count = atomicAdd(dev_counter, 1);
   if (count < max_pillars) {
-    atomicAdd(dev_pillar_count, 1);
-    if (num_points_at_this_pillar >= max_points_per_pillar) {
-      dev_num_points_per_pillar[count] = max_points_per_pillar;
-    } else {
-      dev_num_points_per_pillar[count] = num_points_at_this_pillar;
-    }
+    // atomicAdd(dev_pillar_count, 1);
+    dev_num_points_per_pillar[count] =
+      min(num_points_at_this_pillar, max_points_per_pillar);
     dev_x_coors[count] = x;
     dev_y_coors[count] = y;
-    dev_sparse_pillar_map[y * num_inds_for_scan + x] = 1;
+    // dev_sparse_pillar_map[y * num_inds_for_scan + x] = 1;
     // #ifndef NDEBUG
     // if (count == 0){
     // unsigned long long start = clock64();
@@ -347,7 +344,6 @@ PreprocessPointsCuda::PreprocessPointsCuda(
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_pillar_count_histo_),
         grid_y_size_ * grid_x_size_ * sizeof(int)));
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_counter_), sizeof(int)));
-    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_pillar_count_), sizeof(int)));    
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_points_mean_), max_num_pillars_ * 3 *sizeof(float)));  
     }
 
@@ -355,7 +351,6 @@ PreprocessPointsCuda::~PreprocessPointsCuda() {
     GPU_CHECK(cudaFree(dev_pillar_point_feature_in_coors_));
     GPU_CHECK(cudaFree(dev_pillar_count_histo_));
     GPU_CHECK(cudaFree(dev_counter_));
-    GPU_CHECK(cudaFree(dev_pillar_count_));
     GPU_CHECK(cudaFree(dev_points_mean_));
   }
 
@@ -370,7 +365,6 @@ void PreprocessPointsCuda::DoPreprocessPointsCuda(
     GPU_CHECK(cudaMemset(dev_pillar_point_feature_in_coors_, 0 , grid_y_size_ * grid_x_size_ * max_num_points_per_pillar_ *  num_point_feature_ * sizeof(float)));
     GPU_CHECK(cudaMemset(dev_pillar_count_histo_, 0 , grid_y_size_ * grid_x_size_ * sizeof(int)));
     GPU_CHECK(cudaMemset(dev_counter_, 0, sizeof(int)));
-    GPU_CHECK(cudaMemset(dev_pillar_count_, 0, sizeof(int)));
     GPU_CHECK(cudaMemset(dev_points_mean_, 0,  max_num_pillars_ * 3 * sizeof(float)));
     int num_block = DIVUP(in_num_points , num_threads_);
     make_pillar_histo_kernel<<<num_block , num_threads_>>>(
@@ -380,22 +374,22 @@ void PreprocessPointsCuda::DoPreprocessPointsCuda(
         pillar_y_size_, pillar_z_size_, num_point_feature_);
     
     make_pillar_index_kernel<<<grid_x_size_, grid_y_size_>>>(
-        dev_pillar_count_histo_, dev_counter_, dev_pillar_count_, dev_x_coors,
+        dev_pillar_count_histo_, dev_counter_, dev_x_coors,
         dev_y_coors, dev_num_points_per_pillar, dev_sparse_pillar_map,
         max_num_pillars_, max_num_points_per_pillar_, grid_x_size_,
         num_inds_for_scan_);  
 
-    GPU_CHECK(cudaMemcpy(host_pillar_count, dev_pillar_count_, 1 * sizeof(int),
+    GPU_CHECK(cudaMemcpy(host_pillar_count, dev_counter_, 1 * sizeof(int),
         cudaMemcpyDeviceToHost));
-    make_pillar_feature_kernel<<<host_pillar_count[0],max_num_points_per_pillar_>>>(
+    host_pillar_count[0] = min(host_pillar_count[0], max_num_pillars_);
+    make_pillar_feature_kernel<<<host_pillar_count[0], max_num_points_per_pillar_>>>(
         dev_pillar_point_feature_in_coors_, dev_pillar_point_feature,
         dev_pillar_coors, dev_x_coors, dev_y_coors, dev_num_points_per_pillar,
         max_num_points_per_pillar_, num_point_feature_, grid_x_size_);
     
-
     dim3 mean_block(max_num_points_per_pillar_,3); //(32,3)
 
-    pillar_mean_kernel<<<host_pillar_count[0],mean_block,64 * 3 *sizeof(float)>>>(
+    pillar_mean_kernel<<<host_pillar_count[0], mean_block,64 * 3 *sizeof(float)>>>(
       dev_points_mean_  ,num_point_feature_, dev_pillar_point_feature, dev_num_points_per_pillar, 
         max_num_pillars_ , max_num_points_per_pillar_);
 
