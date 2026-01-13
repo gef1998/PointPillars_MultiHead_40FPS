@@ -131,6 +131,7 @@ class PointPillars {
     float kMaxYRange;
     float kMaxZRange;
     // hyper parameters
+    int kMaxNumPoints;
     int kNumClass;
     int kMaxNumPillars;
     int kMaxNumPointsPerPillar;
@@ -176,6 +177,14 @@ class PointPillars {
 
     std::vector<std::vector<int>> kMultiheadLabelMapping;
     // int kNumAnchorPerCls;
+    cudaStream_t stream_;
+    // CUDA events for timing
+    cudaEvent_t preprocess_start_, preprocess_end_;
+    cudaEvent_t pfe_start_, pfe_end_;
+    cudaEvent_t scatter_start_, scatter_end_;
+    cudaEvent_t backbone_start_, backbone_end_;
+    cudaEvent_t postprocess_start_, postprocess_end_;
+    float* dev_points_;
     int host_pillar_count_[1];
     int* dev_x_coors_;
     int* dev_y_coors_;
@@ -194,7 +203,7 @@ class PointPillars {
     void* rpn_buffers_[4];
     
     float* dev_scattered_feature_;
-
+    
     std::unique_ptr<PreprocessPointsCuda> preprocess_points_cuda_ptr_;
     std::unique_ptr<ScatterCuda> scatter_cuda_ptr_;
     std::unique_ptr<Postprocess> postprocess_ptr_;

@@ -18,6 +18,7 @@ DATA_CONFIG:
 
         -   NAME: transform_points_to_voxels
             VOXEL_SIZE: [0.25, 0.25, 8]
+            kMaxNumPoints: 200000
             kNumPointFeature: 4
             with_cluster_center: True
             with_voxel_center: True

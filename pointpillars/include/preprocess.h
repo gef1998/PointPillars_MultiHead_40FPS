@@ -69,6 +69,7 @@ class PreprocessPointsCuda {
 
     float* dev_pillar_point_feature_in_coors_;
     int* dev_pillar_count_histo_;
+    int* dev_pillar_count_;
 
     int* dev_counter_;
     float* dev_points_mean_;
@@ -123,6 +124,7 @@ class PreprocessPointsCuda {
    *   The number of valid pillars for an input point cloud
    * @param[out] dev_pfe_gather_feature
    *   11 dimensions feature for pfe input channel
+   * @param[in] stream CUDA stream for asynchronous execution
    * @details Convert point cloud to pillar representation
    */
   void DoPreprocessPointsCuda(const float* dev_points,
@@ -134,5 +136,6 @@ class PreprocessPointsCuda {
                               float* dev_pillar_coors,
                               int* dev_sparse_pillar_map,
                               int* host_pillar_count,
-                              float* dev_pfe_gather_feature);
+                              float* dev_pfe_gather_feature,
+                              cudaStream_t stream = nullptr);
 };

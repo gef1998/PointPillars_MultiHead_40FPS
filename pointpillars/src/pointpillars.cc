@@ -44,8 +44,6 @@
 
 #include "pointpillars.h"
 
-#include <chrono>
-#include <iostream>
 #include <iostream>
 
 void PointPillars::InitParams()
@@ -63,6 +61,7 @@ void PointPillars::InitParams()
     kNumClass = params["CLASS_NAMES"].size();
     kMaxNumPillars = params["DATA_CONFIG"]["DATA_PROCESSOR"][2]["MAX_NUMBER_OF_VOXELS"]["test"].as<int>();
     kMaxNumPointsPerPillar = params["DATA_CONFIG"]["DATA_PROCESSOR"][2]["MAX_POINTS_PER_VOXEL"].as<int>();
+    kMaxNumPoints = params["DATA_CONFIG"]["DATA_PROCESSOR"][2]["kMaxNumPoints"].as<int>();
     kNumPointFeature = params["DATA_CONFIG"]["DATA_PROCESSOR"][2]["kNumPointFeature"].as<int>();
     if (kNumPointFeature != 4) {
         throw std::runtime_error("目前只支持kNumPointFeature为 4 的实现");
@@ -145,6 +144,18 @@ PointPillars::PointPillars(const float score_threshold,
 {
     InitParams();
     InitTRT(use_onnx_);
+    GPU_CHECK(cudaStreamCreate(&stream_));
+    // Create CUDA events for timing
+    GPU_CHECK(cudaEventCreate(&preprocess_start_));
+    GPU_CHECK(cudaEventCreate(&preprocess_end_));
+    GPU_CHECK(cudaEventCreate(&pfe_start_));
+    GPU_CHECK(cudaEventCreate(&pfe_end_));
+    GPU_CHECK(cudaEventCreate(&scatter_start_));
+    GPU_CHECK(cudaEventCreate(&scatter_end_));
+    GPU_CHECK(cudaEventCreate(&backbone_start_));
+    GPU_CHECK(cudaEventCreate(&backbone_end_));
+    GPU_CHECK(cudaEventCreate(&postprocess_start_));
+    GPU_CHECK(cudaEventCreate(&postprocess_end_));
     DeviceMemoryMalloc();
     preprocess_points_cuda_ptr_.reset(new PreprocessPointsCuda(
         kNumThreads,
@@ -193,6 +204,7 @@ PointPillars::PointPillars(const float score_threshold,
 
 void PointPillars::DeviceMemoryMalloc() {
     // for pillars 
+    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_points_), kMaxNumPoints * kNumPointFeature * sizeof(float)));
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_num_points_per_pillar_), kMaxNumPillars * sizeof(float))); // M
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_x_coors_), kMaxNumPillars * sizeof(int))); // M
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_y_coors_), kMaxNumPillars * sizeof(int))); // M
@@ -211,9 +223,10 @@ void PointPillars::DeviceMemoryMalloc() {
     // for trt inference
     // create GPU buffers and a stream
 
-    GPU_CHECK(
-        cudaMalloc(&pfe_buffers_[0], kMaxNumPillars * kMaxNumPointsPerPillar *
+    GPU_CHECK(cudaMalloc(&pfe_buffers_[0], kMaxNumPillars * kMaxNumPointsPerPillar *
                                         kNumGatherPointFeature * sizeof(float)));
+    pfe_buffers_[0] = dev_pfe_gather_feature_;
+
     GPU_CHECK(cudaMalloc(&pfe_buffers_[1], kMaxNumPillars * 64 * sizeof(float)));
 
     // for scatter kernel
@@ -221,6 +234,8 @@ void PointPillars::DeviceMemoryMalloc() {
 
     // for backbone
     GPU_CHECK(cudaMalloc(&rpn_buffers_[0],  kRpnInputSize * sizeof(float)));
+    rpn_buffers_[0] = dev_scattered_feature_;
+
     GPU_CHECK(cudaMalloc(&rpn_buffers_[1],  kNumFeature * kAnchorSizes.size() * kAnchorRotations.size() * kNumClass * sizeof(float)));  //cls_score
     GPU_CHECK(cudaMalloc(&rpn_buffers_[2],  kNumFeature * kAnchorSizes.size() * kAnchorRotations.size() * kNumOutputBoxFeature * sizeof(float))); // bbox_pred
     GPU_CHECK(cudaMalloc(&rpn_buffers_[3],  kNumFeature * kAnchorSizes.size() * kAnchorRotations.size() * 2 * sizeof(float))); // dir_cls_pred
@@ -229,6 +244,7 @@ void PointPillars::DeviceMemoryMalloc() {
 
 PointPillars::~PointPillars() {
     // for pillars 
+    GPU_CHECK(cudaFree(dev_points_));
     GPU_CHECK(cudaFree(dev_num_points_per_pillar_));
     GPU_CHECK(cudaFree(dev_x_coors_));
     GPU_CHECK(cudaFree(dev_y_coors_));
@@ -256,29 +272,36 @@ PointPillars::~PointPillars() {
     backbone_engine_->destroy();
     // for post process
     GPU_CHECK(cudaFree(dev_scattered_feature_));
+    // Destroy CUDA events
+    cudaEventDestroy(preprocess_start_);
+    cudaEventDestroy(preprocess_end_);
+    cudaEventDestroy(pfe_start_);
+    cudaEventDestroy(pfe_end_);
+    cudaEventDestroy(scatter_start_);
+    cudaEventDestroy(scatter_end_);
+    cudaEventDestroy(backbone_start_);
+    cudaEventDestroy(backbone_end_);
+    cudaEventDestroy(postprocess_start_);
+    cudaEventDestroy(postprocess_end_);
+    cudaStreamDestroy(stream_);
+
 }
-
-
 
 void PointPillars::SetDeviceMemoryToZero() {
+    // TODO: 太重了，可以完全由 kernel 覆盖的变量不初始化。
+    GPU_CHECK(cudaMemsetAsync(dev_num_points_per_pillar_, 0, kMaxNumPillars * sizeof(float), stream_));
+    GPU_CHECK(cudaMemsetAsync(dev_x_coors_,               0, kMaxNumPillars * sizeof(int), stream_));
+    GPU_CHECK(cudaMemsetAsync(dev_y_coors_,               0, kMaxNumPillars * sizeof(int), stream_));
+    GPU_CHECK(cudaMemsetAsync(dev_pillar_point_feature_,  0, kMaxNumPillars * kMaxNumPointsPerPillar * kNumPointFeature * sizeof(float), stream_));
+    GPU_CHECK(cudaMemsetAsync(dev_pillar_coors_,          0, kMaxNumPillars * 4 * sizeof(float), stream_));
+    GPU_CHECK(cudaMemsetAsync(dev_sparse_pillar_map_,     0, kNumIndsForScan * kNumIndsForScan * sizeof(int), stream_));
 
-    GPU_CHECK(cudaMemset(dev_num_points_per_pillar_, 0, kMaxNumPillars * sizeof(float)));
-    GPU_CHECK(cudaMemset(dev_x_coors_,               0, kMaxNumPillars * sizeof(int)));
-    GPU_CHECK(cudaMemset(dev_y_coors_,               0, kMaxNumPillars * sizeof(int)));
-    GPU_CHECK(cudaMemset(dev_pillar_point_feature_,  0, kMaxNumPillars * kMaxNumPointsPerPillar * kNumPointFeature * sizeof(float)));
-    GPU_CHECK(cudaMemset(dev_pillar_coors_,          0, kMaxNumPillars * 4 * sizeof(float)));
-    GPU_CHECK(cudaMemset(dev_sparse_pillar_map_,     0, kNumIndsForScan * kNumIndsForScan * sizeof(int)));
+    GPU_CHECK(cudaMemsetAsync(dev_pfe_gather_feature_,    0, kMaxNumPillars * kMaxNumPointsPerPillar * kNumGatherPointFeature * sizeof(float), stream_));
+    GPU_CHECK(cudaMemsetAsync(pfe_buffers_[0],       0, kMaxNumPillars * kMaxNumPointsPerPillar * kNumGatherPointFeature * sizeof(float), stream_));
+    GPU_CHECK(cudaMemsetAsync(pfe_buffers_[1],       0, kMaxNumPillars * 64 * sizeof(float), stream_));
 
-    GPU_CHECK(cudaMemset(dev_pfe_gather_feature_,    0, kMaxNumPillars * kMaxNumPointsPerPillar * kNumGatherPointFeature * sizeof(float)));
-    GPU_CHECK(cudaMemset(pfe_buffers_[0],       0, kMaxNumPillars * kMaxNumPointsPerPillar * kNumGatherPointFeature * sizeof(float)));
-    GPU_CHECK(cudaMemset(pfe_buffers_[1],       0, kMaxNumPillars * 64 * sizeof(float)));
-
-    GPU_CHECK(cudaMemset(dev_scattered_feature_,    0, kNumThreads * kGridYSize * kGridXSize * sizeof(float)));
+    GPU_CHECK(cudaMemsetAsync(dev_scattered_feature_,    0, kNumThreads * kGridYSize * kGridXSize * sizeof(float), stream_));
 }
-
-
-
-
 
 void PointPillars::InitTRT(const bool use_onnx) {
   if (use_onnx_) {
@@ -381,96 +404,87 @@ void PointPillars::EngineToTRTModel(
 
 }
 
-std::vector<BoundingBox> PointPillars::DoInference(const float* in_points_array, const int in_num_points) 
+std::vector<BoundingBox> PointPillars::DoInference(const float* in_points_array, int in_num_points) 
 {
-    auto preprocess_start = std::chrono::high_resolution_clock::now();
-    SetDeviceMemoryToZero();
-    cudaDeviceSynchronize();
+    GPU_CHECK(cudaEventRecord(preprocess_start_, stream_));
     // [STEP 1] : load pointcloud
-    float* dev_points;
     // TODO: 初始化时malloc
-    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_points),
-                        in_num_points * kNumPointFeature * sizeof(float))); // in_num_points , 5
-    GPU_CHECK(cudaMemset(dev_points, 0, in_num_points * kNumPointFeature * sizeof(float)));
-    GPU_CHECK(cudaMemcpy(dev_points, in_points_array,
-                        in_num_points * kNumPointFeature * sizeof(float),
-                        cudaMemcpyHostToDevice));
+    SetDeviceMemoryToZero();
+    if (in_num_points > kMaxNumPoints){
+        printf("[WARNING] Input points %d exceeds max limit %d, truncated to %d\n", 
+            in_num_points, kMaxNumPoints, kMaxNumPoints); 
+        in_num_points = kMaxNumPoints;
+    }
+    
+    cudaMemcpyAsync(dev_points_, in_points_array, in_num_points * kNumPointFeature * sizeof(float),
+        cudaMemcpyHostToDevice, stream_);
     // [STEP 2] : preprocess
-    host_pillar_count_[0] = 0;
     preprocess_points_cuda_ptr_->DoPreprocessPointsCuda(
-          dev_points, in_num_points, dev_x_coors_, dev_y_coors_,
+          dev_points_, in_num_points, dev_x_coors_, dev_y_coors_,
           dev_num_points_per_pillar_, dev_pillar_point_feature_, dev_pillar_coors_,
           dev_sparse_pillar_map_, host_pillar_count_ ,
-          dev_pfe_gather_feature_);
-    cudaDeviceSynchronize();
-    auto preprocess_end = std::chrono::high_resolution_clock::now();
-    // DEVICE_SAVE<float>(dev_pfe_gather_feature_,  kMaxNumPillars * kMaxNumPointsPerPillar * kNumGatherPointFeature  , "0_Model_pfe_input_gather_feature");
-
+          dev_pfe_gather_feature_, stream_);
+    GPU_CHECK(cudaEventRecord(preprocess_end_, stream_));
     
-    auto pfe_start = std::chrono::high_resolution_clock::now();
     // [STEP 3] : pfe forward
-    cudaStream_t stream;
-    GPU_CHECK(cudaStreamCreate(&stream));
-    GPU_CHECK(cudaMemcpyAsync(pfe_buffers_[0], dev_pfe_gather_feature_,
-                            kMaxNumPillars * kMaxNumPointsPerPillar * kNumGatherPointFeature * sizeof(float), ///kNumGatherPointFeature
-                            cudaMemcpyDeviceToDevice, stream));
-    pfe_context_->enqueueV2(pfe_buffers_, stream, nullptr);
-    cudaDeviceSynchronize();
-    auto pfe_end = std::chrono::high_resolution_clock::now();
-    // DEVICE_SAVE<float>(reinterpret_cast<float*>(pfe_buffers_[1]),  kMaxNumPillars * 64 , "1_Model_pfe_output_buffers_[1]");
-
+    GPU_CHECK(cudaEventRecord(pfe_start_, stream_));
+    // GPU_CHECK(cudaMemcpyAsync(pfe_buffers_[0], dev_pfe_gather_feature_,
+    //                         kMaxNumPillars * kMaxNumPointsPerPillar * kNumGatherPointFeature * sizeof(float), ///kNumGatherPointFeature
+    //                         cudaMemcpyDeviceToDevice, stream_));
+    pfe_context_->enqueueV2(pfe_buffers_, stream_, nullptr);
+    // 等待 PFE 完成，因为 scatter 需要其输出
+    GPU_CHECK(cudaEventRecord(pfe_end_, stream_));
 
     // [STEP 4] : scatter pillar feature
-    auto scatter_start = std::chrono::high_resolution_clock::now();
+    GPU_CHECK(cudaEventRecord(scatter_start_, stream_));
     scatter_cuda_ptr_->DoScatterCuda(
         host_pillar_count_[0], dev_x_coors_, dev_y_coors_,
-        reinterpret_cast<float*>(pfe_buffers_[1]), dev_scattered_feature_);
-    cudaDeviceSynchronize();
-    auto scatter_end = std::chrono::high_resolution_clock::now();   
-    // DEVICE_SAVE<float>(dev_scattered_feature_ ,  kRpnInputSize,"2_Model_backbone_input_dev_scattered_feature");
-
+        reinterpret_cast<float*>(pfe_buffers_[1]), dev_scattered_feature_, stream_);
+    // 等待 scatter 完成，因为 backbone 需要其输出
+    GPU_CHECK(cudaEventRecord(scatter_end_, stream_));
 
     // [STEP 5] : backbone forward
-    auto backbone_start = std::chrono::high_resolution_clock::now();
+    GPU_CHECK(cudaEventRecord(backbone_start_, stream_));
+    // GPU_CHECK(cudaMemcpyAsync(rpn_buffers_[0], dev_scattered_feature_,
+    //                         kRpnInputSize * sizeof(float), cudaMemcpyDeviceToDevice, stream_));
 
-    GPU_CHECK(cudaMemcpyAsync(rpn_buffers_[0], dev_scattered_feature_,
-                            kRpnInputSize * sizeof(float), cudaMemcpyDeviceToDevice, stream));
-
-    backbone_context_->enqueueV2(rpn_buffers_, stream, nullptr);
-    cudaDeviceSynchronize();
-    auto backbone_end = std::chrono::high_resolution_clock::now();
+    backbone_context_->enqueueV2(rpn_buffers_, stream_, nullptr);
+    // 等待 backbone 完成，因为 postprocess 需要其输出
+    GPU_CHECK(cudaEventRecord(backbone_end_, stream_));
 
     // [STEP 6]: postprocess (multihead)
-    auto postprocess_start = std::chrono::high_resolution_clock::now();
+    GPU_CHECK(cudaEventRecord(postprocess_start_, stream_));
     postprocess_ptr_->DoPostprocess(
         reinterpret_cast<float*>(rpn_buffers_[1]), //cls_score
         reinterpret_cast<float*>(rpn_buffers_[2]),  // bbox_pred
         reinterpret_cast<float*>(rpn_buffers_[3]), // dir_cls_pred   
-        stream);
-    cudaDeviceSynchronize();
-    auto postprocess_end = std::chrono::high_resolution_clock::now();
+        stream_);
+    // 等待 postprocess 完成，因为需要读取结果
+    GPU_CHECK(cudaEventRecord(postprocess_end_, stream_));
+    
+    // 同步最后一个事件，确保所有操作都已完成，然后才能安全地计算时间
+    GPU_CHECK(cudaEventSynchronize(postprocess_end_));
 
-    // release the stream and the buffers
-    std::chrono::duration<double> preprocess_cost = preprocess_end - preprocess_start;
-    std::chrono::duration<double> pfe_cost = pfe_end - pfe_start;
-    std::chrono::duration<double> scatter_cost = scatter_end - scatter_start;
-    std::chrono::duration<double> backbone_cost = backbone_end - backbone_start;
-    std::chrono::duration<double> postprocess_cost = postprocess_end - postprocess_start;
+    // Calculate elapsed time using CUDA events
+    float preprocess_time_ms = 0.0f, pfe_time_ms = 0.0f, scatter_time_ms = 0.0f;
+    float backbone_time_ms = 0.0f, postprocess_time_ms = 0.0f, total_time_ms = 0.0f;
+    
+    GPU_CHECK(cudaEventElapsedTime(&preprocess_time_ms, preprocess_start_, preprocess_end_));
+    GPU_CHECK(cudaEventElapsedTime(&pfe_time_ms, pfe_start_, pfe_end_));
+    GPU_CHECK(cudaEventElapsedTime(&scatter_time_ms, scatter_start_, scatter_end_));
+    GPU_CHECK(cudaEventElapsedTime(&backbone_time_ms, backbone_start_, backbone_end_));
+    GPU_CHECK(cudaEventElapsedTime(&postprocess_time_ms, postprocess_start_, postprocess_end_));
+    GPU_CHECK(cudaEventElapsedTime(&total_time_ms, preprocess_start_, postprocess_end_));
 
-    std::chrono::duration<double> pointpillars_cost = postprocess_end - preprocess_start;
     std::cout << "------------------------------------" << std::endl;
     std::cout << setiosflags(ios::left)  << setw(14) << "Module" << setw(12)  << "Time"  << resetiosflags(ios::left) << std::endl;
     std::cout << "------------------------------------" << std::endl;
     std::string Modules[] = {"Preprocess" , "Pfe" , "Scatter" , "Backbone" , "Postprocess" , "Summary"};
-    double Times[] = {preprocess_cost.count() , pfe_cost.count() , scatter_cost.count() , backbone_cost.count() , postprocess_cost.count() , pointpillars_cost.count()}; 
+    double Times[] = {preprocess_time_ms, pfe_time_ms, scatter_time_ms, backbone_time_ms, postprocess_time_ms, total_time_ms}; 
 
     for (int i =0 ; i < 6 ; ++i) {
-        std::cout << setiosflags(ios::left) << setw(14) << Modules[i]  << setw(8)  << Times[i] * 1000 << " ms" << resetiosflags(ios::left) << std::endl;
+        std::cout << setiosflags(ios::left) << setw(14) << Modules[i]  << setw(8)  << Times[i] << " ms" << resetiosflags(ios::left) << std::endl;
     }
     std::cout << "------------------------------------" << std::endl;
-    cudaStreamDestroy(stream);
-    GPU_CHECK(cudaFree(dev_points));
-
     return this->postprocess_ptr_->bndBoxVec();
-
 }

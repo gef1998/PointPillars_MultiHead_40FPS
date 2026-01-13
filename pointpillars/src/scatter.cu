@@ -73,8 +73,8 @@ grid_y_size_(grid_y_size) {}
 
 void ScatterCuda::DoScatterCuda(const int pillar_count, int *x_coors,
    int *y_coors, float *pfe_output,
-   float *scattered_feature) {
-scatter_kernel<<<pillar_count, num_threads_>>>(x_coors, y_coors, pfe_output,
-                    scattered_feature,
-                    grid_x_size_, grid_y_size_);
+   float *scattered_feature, cudaStream_t stream) {
+  scatter_kernel<<<pillar_count, num_threads_, 0, stream>>>(x_coors, y_coors, pfe_output,
+                      scattered_feature,
+                      grid_x_size_, grid_y_size_);
 }

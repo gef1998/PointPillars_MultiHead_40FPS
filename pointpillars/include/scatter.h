@@ -68,10 +68,12 @@ class ScatterCuda {
    * @param[in] y_coors Y-coordinate indexes for corresponding pillars
    * @param[in] pfe_output Output from Pillar Feature Extractor
    * @param[out] scattered_feature Gridmap representation for pillars' feature
+   * @param[in] stream CUDA stream for asynchronous execution
    * @details Allocate pillars in gridmap based on index(coordinates)
    * information
    */
   void DoScatterCuda(const int pillar_count, int* x_coors, int* y_coors,
-                     float* pfe_output, float* scattered_feature);
+                     float* pfe_output, float* scattered_feature,
+                     cudaStream_t stream = nullptr);
 };
 
