@@ -383,20 +383,20 @@ void PointPillars::EngineToTRTModel(
 
 std::vector<BoundingBox> PointPillars::DoInference(const float* in_points_array, const int in_num_points) 
 {
+    auto preprocess_start = std::chrono::high_resolution_clock::now();
     SetDeviceMemoryToZero();
     cudaDeviceSynchronize();
     // [STEP 1] : load pointcloud
     float* dev_points;
+    // TODO: 初始化时malloc
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_points),
                         in_num_points * kNumPointFeature * sizeof(float))); // in_num_points , 5
     GPU_CHECK(cudaMemset(dev_points, 0, in_num_points * kNumPointFeature * sizeof(float)));
     GPU_CHECK(cudaMemcpy(dev_points, in_points_array,
                         in_num_points * kNumPointFeature * sizeof(float),
                         cudaMemcpyHostToDevice));
-    
     // [STEP 2] : preprocess
     host_pillar_count_[0] = 0;
-    auto preprocess_start = std::chrono::high_resolution_clock::now();
     preprocess_points_cuda_ptr_->DoPreprocessPointsCuda(
           dev_points, in_num_points, dev_x_coors_, dev_y_coors_,
           dev_num_points_per_pillar_, dev_pillar_point_feature_, dev_pillar_coors_,
@@ -406,18 +406,19 @@ std::vector<BoundingBox> PointPillars::DoInference(const float* in_points_array,
     auto preprocess_end = std::chrono::high_resolution_clock::now();
     // DEVICE_SAVE<float>(dev_pfe_gather_feature_,  kMaxNumPillars * kMaxNumPointsPerPillar * kNumGatherPointFeature  , "0_Model_pfe_input_gather_feature");
 
+    
+    auto pfe_start = std::chrono::high_resolution_clock::now();
     // [STEP 3] : pfe forward
     cudaStream_t stream;
     GPU_CHECK(cudaStreamCreate(&stream));
-    auto pfe_start = std::chrono::high_resolution_clock::now();
     GPU_CHECK(cudaMemcpyAsync(pfe_buffers_[0], dev_pfe_gather_feature_,
                             kMaxNumPillars * kMaxNumPointsPerPillar * kNumGatherPointFeature * sizeof(float), ///kNumGatherPointFeature
                             cudaMemcpyDeviceToDevice, stream));
     pfe_context_->enqueueV2(pfe_buffers_, stream, nullptr);
     cudaDeviceSynchronize();
-
     auto pfe_end = std::chrono::high_resolution_clock::now();
     // DEVICE_SAVE<float>(reinterpret_cast<float*>(pfe_buffers_[1]),  kMaxNumPillars * 64 , "1_Model_pfe_output_buffers_[1]");
+
 
     // [STEP 4] : scatter pillar feature
     auto scatter_start = std::chrono::high_resolution_clock::now();
@@ -425,8 +426,9 @@ std::vector<BoundingBox> PointPillars::DoInference(const float* in_points_array,
         host_pillar_count_[0], dev_x_coors_, dev_y_coors_,
         reinterpret_cast<float*>(pfe_buffers_[1]), dev_scattered_feature_);
     cudaDeviceSynchronize();
-        auto scatter_end = std::chrono::high_resolution_clock::now();   
+    auto scatter_end = std::chrono::high_resolution_clock::now();   
     // DEVICE_SAVE<float>(dev_scattered_feature_ ,  kRpnInputSize,"2_Model_backbone_input_dev_scattered_feature");
+
 
     // [STEP 5] : backbone forward
     auto backbone_start = std::chrono::high_resolution_clock::now();
