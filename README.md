@@ -1,6 +1,14 @@
 
 **English** | [**简体中文**](README_zh-CN.md)
 
+**Attention！** 此为PointPillars Hard Voxelization实现分支，由于Hard Voxelization(HV)效率低，部署耗时长，将不再更新HV实现的PointPillars
+未来将主要使用dynamic voxelization方式的PointPillars
+比起传统hard voxelization有以下四大好处:
+- dynamic voxelization不需要限制voxel内的最大点云数，可以有效地降低信息损失。
+- 不需要填充voxel到预定地范围，传统voxelnet在远处很稀疏时，会有大量的空voxel，造成不必要的计算量
+- 减少point与voxel丢失问题，模型更鲁棒
+- point-level embedding 提供从不同视角提供区域特征信息
+
 # PointPillars
 **High performance version of 3D object detection network -[PointPillars](https://github.com/traveller59/second.pytorch), which can achieve the real-time processing (less than 1 ms / head)**
 1. The inference part of **PointPillars**(pfe , backbone(multihead)) is optimized by tensorrt
