@@ -316,78 +316,162 @@ __global__ void gather_point_feature_kernel(
   
 }
 
-// __global__ void dynamic_voxelize_kernel(
-//     const float* dev_points, int* coors, const float voxel_x, const float voxel_y,
-//     const float voxel_z, const float coors_x_min, const float coors_y_min,
-//     const float coors_z_min, const float coors_x_max, const float coors_y_max,
-//     const float coors_z_max, const int grid_x, const int grid_y,
-//     const int grid_z, const int num_points, const int num_features,
-//     const int NDim, int* voxel_num) {
-//     //   const int index = blockIdx.x * threadsPerBlock + threadIdx.x;
-//     int p_id = blockIdx.x * blockDim.x +  threadIdx.x ;
-//     if (p_id >= num_points) {
-//       return;
-//     }
-//       // To save some computation
-//     auto points_offset = dev_points + p_id * num_features;
-//     auto coors_offset = coors + p_id * NDim;
-//     int c_x = floorf((points_offset[0] - coors_x_min) / voxel_x);
-//     int c_y = floorf((points_offset[1] - coors_y_min) / voxel_y);
-//     int c_z = floorf((points_offset[2] - coors_z_min) / voxel_z);
-//     // int valid = c_x >= 0 && c_x < grid_x && c_y >= 0 && c_y < grid_y && c_z >= 0 && c_z < grid_z;
-//     // Danger：需要保证输入的points全部在range范围内
-//     int sparse_voxel_id = (c_z * grid_y + c_y) * grid_x + c_x;
-//     int voxel_flag = atomicCAS(&svid_to_dvid_map[sparse_voxel_id], -1, -2);
+__global__ void dynamic_voxelize_step1_kernel(
+  const float* dev_points, int* coors, const float pillar_x_size, const float pillar_y_size,
+  const float pillar_z_size, const float min_x_range, const float min_y_range,
+  const float min_z_range, const int grid_x_size, const int grid_y_size, const int grid_z_size,
+  const int num_points, const int num_point_feature, int* voxel_num, int* svid_to_dvid_map,
+  const int num_gather_feature, float* dev_pfe_gather_feature_, int* voxel_coors) {
 
-//     int dense_voxel_id = 0;
-//     if (voxel_flag == -1) {
-//       dense_voxel_id = atomicAdd(voxel_num, 1);
-//       svid_to_dvid_map[sparse_voxel_id] = dense_voxel_id;
-//       voxel_coors[dense_voxel_id * 3] = c_z;
-//       voxel_coors[dense_voxel_id * 3 + 1] = c_y;
-//       voxel_coors[dense_voxel_id * 3 + 2] = c_x;
-
-//       voxel_count[dense_voxel_id] = 0;
-//       __threadfence();          // ← 核心
-//       atomicAdd(&voxel_count[dense_voxel_id], 1);
-//     } else {
-//       while ((dense_voxel_id = svid_to_dvid_map[sparse_voxel_id]) == -2) {
-//         // spin
-//     }
-//       atomicAdd(&voxel_count[dense_voxel_id], 1);
-//     }
+    int p_id = blockIdx.x * blockDim.x + threadIdx.x;
+    if (p_id >= num_points) {
+      return;
+    }
+    // To save some computation
+    const float* points_offset = dev_points + p_id * num_point_feature;
+    int* coors_offset = coors + p_id * 3;
     
-//     pid_to_dvid_map[p_id] = dense_voxel_id;
-//     for (int c = 0; c < 3; ++c) { // TODO: 归约优化
-//       atomicAdd(&voxel_feats[dense_voxel_id * 3 + c], points_offset[c]); //voxel_feats初始化阶段malloc最大值
-// }
+    // 计算体素坐标
+    int c_x = floorf((points_offset[0] - min_x_range) / pillar_x_size);
+    int c_y = floorf((points_offset[1] - min_y_range) / pillar_y_size);
+    int c_z = floorf((points_offset[2] - min_z_range) / pillar_z_size);
 
-// __global__ void reduce_feats_kernel(
-//   const float* feats,     // [N, C]
-//   const int* pid_to_dvid_map,   // [N]
-//   float* voxel_feats,     // [M, C]
-//   int num_points, int num_feature
-// ) {
-//   int p_id = blockIdx.x * blockDim.x + threadIdx.x;
-//   if (p_id >= num_points) return;
+    float* feat_offset = dev_pfe_gather_feature_ + p_id * num_gather_feature;
+    feat_offset[0] = points_offset[0];
+    feat_offset[1] = points_offset[1];
+    feat_offset[2] = points_offset[2];
+    feat_offset[3] = points_offset[3];
+    feat_offset[4] = points_offset[0];
+    feat_offset[5] = points_offset[1];
+    feat_offset[6] = points_offset[2];
+    feat_offset[7] = points_offset[0] - (c_x * pillar_x_size + (pillar_x_size * 0.5f + min_x_range));
+    feat_offset[8] = points_offset[1] - (c_y * pillar_y_size + (pillar_y_size * 0.5f + min_y_range));
+    feat_offset[9] = points_offset[2] - (c_z * pillar_z_size + (pillar_z_size * 0.5f + min_z_range));
 
-//   int dense_voxel_id = pid_to_dvid_map[p_id];
-//   if (dense_voxel_id < 0) return;
+    // 先检查坐标有效性，避免无效点写入特征
+    if (c_x < 0 || c_x >= grid_x_size || c_y < 0 || c_y >= grid_y_size || c_z < 0 || c_z >= grid_z_size) {
+      coors_offset[0] = -1;
+      coors_offset[1] = -1;
+      coors_offset[2] = -1;
+      return;
+    }
+    
+    // 坐标有效，写入coors
+    coors_offset[0] = c_z;
+    coors_offset[1] = c_y;
+    coors_offset[2] = c_x;
 
-//   for (int c = 0; c < num_feature; ++c) {
-//       atomicAdd(&voxel_feats[dense_voxel_id * num_feature + c],
-//                 feats[p_id * num_feature + c]);
-//   }
-// }
+    // 计算稀疏体素ID 
+    int sparse_voxel_id = (c_z * grid_y_size + c_y) * grid_x_size + c_x; 
+    int voxel_flag = atomicCAS(&svid_to_dvid_map[sparse_voxel_id], -1, -2); 
+    if (voxel_flag == -1) { 
+      int dense_voxel_id = atomicAdd(voxel_num, 1); 
+      svid_to_dvid_map[sparse_voxel_id] = dense_voxel_id;
+      // 记录稠密体素在 BEV 平面上的 (y, x) 坐标，供后续 scatter 使用
+      voxel_coors[dense_voxel_id * 2 + 0] = c_y;
+      voxel_coors[dense_voxel_id * 2 + 1] = c_x;
+    } 
+}
+
+__global__ void dynamic_voxelize_step2_kernel(
+  const float* dev_points, int* coors, float* voxel_feats, int* voxel_count_list, 
+  const int num_points, const int num_point_feature, int* pid_to_dvid_map, int* svid_to_dvid_map,
+  const int grid_x_size, const int grid_y_size) {
+
+    int p_id = blockIdx.x * blockDim.x + threadIdx.x;
+    if (p_id >= num_points) {
+      return;
+    }
+    // To save some computation
+    int* coors_offset = coors + p_id * 3;
+
+    int c_z = coors_offset[0];
+    if (c_z == -1){
+      pid_to_dvid_map[p_id] = -1;
+      return;
+    }
+    int c_y = coors_offset[1];
+    int c_x = coors_offset[2];
+
+    int sparse_voxel_id = (c_z * grid_y_size + c_y) * grid_x_size + c_x; 
+    int dense_voxel_id = svid_to_dvid_map[sparse_voxel_id]; 
+
+    #ifndef NDEBUG
+    if (dense_voxel_id < 0)
+    {
+      printf("dense_voxel_id出现小于0的情况, 检查代码!");
+      return;
+    }
+     #endif
+
+    pid_to_dvid_map[p_id] = dense_voxel_id;
+
+    const float* points_offset = dev_points + p_id * num_point_feature;
+    atomicAdd(&voxel_count_list[dense_voxel_id], 1); // voxel_count_list 全初始化为 0
+    // TODO: voxel 聚合可以 warp 优化（进阶）
+    atomicAdd(&voxel_feats[dense_voxel_id * 3 + 0], points_offset[0]);
+    atomicAdd(&voxel_feats[dense_voxel_id * 3 + 1], points_offset[1]);
+    atomicAdd(&voxel_feats[dense_voxel_id * 3 + 2], points_offset[2]);
+}
+
+__global__ void voxel_mean_kernel(
+  float* voxel_feats,
+  const int* voxel_count_list,
+  int* num_voxels)
+{
+  int v = blockIdx.x * blockDim.x + threadIdx.x;
+  if (v >= num_voxels[0]) return;
+
+  int cnt = voxel_count_list[v];
+  // if (cnt <= 0) return;
+
+  float inv = 1.0f / cnt;
+
+  #pragma unroll
+  for (int c = 0; c < 3; ++c) {
+    voxel_feats[v * 3 + c] = voxel_feats[v * 3 + c] * inv;
+  }
+}
+
+__global__ void gather_point_feature_kernel(
+  float* dev_pfe_gather_feature_,
+  const float* voxel_means,
+  const int* pid_to_dvid_map_,
+  int num_gather_feature,
+  int num_points)
+{
+  int p_id = blockIdx.x * blockDim.x + threadIdx.x;
+  if (p_id >= num_points) return;
+
+  int dvid = pid_to_dvid_map_[p_id];
+  if (dvid < 0) return;
+
+  const float* mean = voxel_means + 3 * dvid;
+  float* feat = dev_pfe_gather_feature_ + p_id * num_gather_feature;
+
+  feat[4] -= mean[0];
+  feat[5] -= mean[1];
+  feat[6] -= mean[2];
+  // #ifndef NDEBUG
+  // if (p_id == 353023)
+  // {
+  //   printf("feat[0] = %.3f, feat[1] = %.3f, feat[2] = %.3f, feat[3] = %.3f,  feat[4] = %.3f, feat[5] = %.3f, feat[6] = %.3f, feat[9] = %.3f \n", 
+  //     feat[0], feat[1], feat[2], feat[3], feat[4], feat[5], feat[6], feat[9]);
+  //   return;
+  // }
+  //  #endif
+
+}
 
 PreprocessPointsCuda::PreprocessPointsCuda(
-    const int num_threads, const int max_num_pillars, const int max_points_per_pillar, 
+    const int num_threads, const int max_num_pillars, const int max_num_points, const int max_points_per_pillar, 
     const int num_point_feature, const int kNumGatherPointFeature, const int num_inds_for_scan, 
     const int grid_x_size, const int grid_y_size, const int grid_z_size, 
     const float pillar_x_size, const float pillar_y_size, const float pillar_z_size, 
     const float min_x_range, const float min_y_range, const float min_z_range)
     : num_threads_(num_threads),
       max_num_pillars_(max_num_pillars),
+      max_num_points_(max_num_points),
       max_num_points_per_pillar_(max_points_per_pillar),
       num_point_feature_(num_point_feature),
       num_gather_point_feature_(kNumGatherPointFeature),
@@ -402,119 +486,66 @@ PreprocessPointsCuda::PreprocessPointsCuda(
       min_y_range_(min_y_range),
       min_z_range_(min_z_range) {
     
-    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_pillar_point_feature_in_coors_),
-        grid_y_size_ * grid_x_size_ * max_num_points_per_pillar_ *  num_point_feature_ * sizeof(float)));
-    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_pillar_count_histo_),
-        grid_y_size_ * grid_x_size_ * sizeof(int)));
-    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_counter_), sizeof(int)));
-    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_points_mean_), max_num_pillars_ * 3 *sizeof(float)));  
+    
+    // GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_pillar_point_feature_in_coors_),
+    //     grid_y_size_ * grid_x_size_ * max_num_points_per_pillar_ *  num_point_feature_ * sizeof(float)));
+    // GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_pillar_count_histo_),
+    //     grid_y_size_ * grid_x_size_ * sizeof(int)));
+    // GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_counter_), sizeof(int)));
+    // GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_points_mean_), max_num_pillars_ * 3 *sizeof(float)));
+
+    // dynamic
+    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&coors_), max_num_points_ * 3 * sizeof(int)));  
+    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&voxel_num_), sizeof(int)));  
+    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&svid_to_dvid_map_), grid_x_size_ * grid_y_size_ * grid_z_size_ * sizeof(int)));  
+    // voxel_coors_ 仅存储每个稠密体素在 BEV 平面的 (y, x)，每个体素占用 2 个 int
+    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&voxel_feats_), max_num_pillars_ * 3 * sizeof(float)));  
+    num_voxel_block_ = DIVUP(max_num_pillars_, num_threads_);    
+
     }
 
 PreprocessPointsCuda::~PreprocessPointsCuda() {
-    GPU_CHECK(cudaFree(dev_pillar_point_feature_in_coors_));
-    GPU_CHECK(cudaFree(dev_pillar_count_histo_));
-    GPU_CHECK(cudaFree(dev_counter_));
-    GPU_CHECK(cudaFree(dev_points_mean_));
+    // GPU_CHECK(cudaFree(dev_pillar_point_feature_in_coors_));
+    // GPU_CHECK(cudaFree(dev_pillar_count_histo_));
+    // GPU_CHECK(cudaFree(dev_counter_));
+    // GPU_CHECK(cudaFree(dev_points_mean_));
+
+    // dynamic
+    GPU_CHECK(cudaFree(coors_));  
+    GPU_CHECK(cudaFree(voxel_num_));  
+    GPU_CHECK(cudaFree(svid_to_dvid_map_));  
+    GPU_CHECK(cudaFree(voxel_feats_));  
+
   }
 
 
 void PreprocessPointsCuda::DoPreprocessPointsCuda(
-    const float* dev_points, const int in_num_points, 
-    int* dev_x_coors,int* dev_y_coors, 
-    float* dev_num_points_per_pillar,
-    float* dev_pillar_point_feature, float* dev_pillar_coors,
-    int* dev_sparse_pillar_map, int* host_pillar_count , float* dev_pfe_gather_feature,
-    cudaStream_t stream) {
-    // initialize paraments
-    GPU_CHECK(cudaMemsetAsync(dev_pillar_point_feature_in_coors_, 0 , grid_y_size_ * grid_x_size_ * max_num_points_per_pillar_ *  num_point_feature_ * sizeof(float), stream));
-    GPU_CHECK(cudaMemsetAsync(dev_pillar_count_histo_, 0 , grid_y_size_ * grid_x_size_ * sizeof(int), stream));
-    GPU_CHECK(cudaMemsetAsync(dev_counter_, 0, sizeof(int), stream));
-    GPU_CHECK(cudaMemsetAsync(dev_points_mean_, 0,  max_num_pillars_ * 3 * sizeof(float), stream));
-    int num_block = DIVUP(in_num_points , num_threads_);
-    make_pillar_histo_kernel<<<num_block , num_threads_, 0, stream>>>(
-        dev_points, dev_pillar_point_feature_in_coors_, dev_pillar_count_histo_,
-        in_num_points, max_num_points_per_pillar_, grid_x_size_, grid_y_size_,
-        grid_z_size_, min_x_range_, min_y_range_, min_z_range_, pillar_x_size_,
-        pillar_y_size_, pillar_z_size_, num_point_feature_);
-    
-    make_pillar_index_kernel<<<grid_x_size_, grid_y_size_, 0, stream>>>(
-        dev_pillar_count_histo_, dev_counter_, dev_x_coors,
-        dev_y_coors, dev_num_points_per_pillar, dev_sparse_pillar_map,
-        max_num_pillars_, max_num_points_per_pillar_, grid_x_size_,
-        num_inds_for_scan_);  
+  const float* dev_points, const int in_num_points, void** buffer, cudaStream_t stream) {
+  // initialize paraments
+  float* dev_pfe_gather_feature = reinterpret_cast<float*>(buffer[0]);
+  int* voxel_count_list_ = reinterpret_cast<int*>(buffer[1]);
+  int* pid_to_dvid_map_ = reinterpret_cast<int*>(buffer[2]);
+  int* voxel_coors_ = reinterpret_cast<int*>(buffer[3]);
 
-    // 需要同步以获取 pillar_count，使用 stream 同步而不是全局同步
-    // 先等待之前的 kernel 完成，然后异步拷贝，最后等待拷贝完成
-    GPU_CHECK(cudaStreamSynchronize(stream));
-    GPU_CHECK(cudaMemcpyAsync(host_pillar_count, dev_counter_, 1 * sizeof(int),
-        cudaMemcpyDeviceToHost, stream));
-    GPU_CHECK(cudaStreamSynchronize(stream));  // 等待拷贝完成才能使用 host_pillar_count
-    host_pillar_count[0] = min(host_pillar_count[0], max_num_pillars_);
-    make_pillar_feature_kernel<<<host_pillar_count[0], max_num_points_per_pillar_, 0, stream>>>(
-        dev_pillar_point_feature_in_coors_, dev_pillar_point_feature,
-        dev_pillar_coors, dev_x_coors, dev_y_coors, dev_num_points_per_pillar,
-        max_num_points_per_pillar_, num_point_feature_, grid_x_size_);
-    
-    dim3 mean_block(max_num_points_per_pillar_,3); //(32,3)
+  GPU_CHECK(cudaMemset(voxel_num_, 0,  sizeof(int)));
+  GPU_CHECK(cudaMemset(svid_to_dvid_map_, -1,  grid_x_size_ * grid_y_size_ * grid_z_size_ * sizeof(int)));
+  // voxel_coors_ 为每个稠密体素记录 (y, x)，每个体素 2 个 int，初始化为 -1 表示无效
+  GPU_CHECK(cudaMemset(voxel_feats_, 0,  max_num_pillars_ * 3 * sizeof(float)));
 
-    pillar_mean_kernel<<<host_pillar_count[0], mean_block, 64 * 3 * sizeof(float), stream>>>(
-      dev_points_mean_  ,num_point_feature_, dev_pillar_point_feature, dev_num_points_per_pillar, 
-        max_num_pillars_ , max_num_points_per_pillar_);
+  int num_point_block = DIVUP(in_num_points , num_threads_);
+  dynamic_voxelize_step1_kernel<<<num_point_block , num_threads_, 0, stream>>>(
+      dev_points, coors_, pillar_x_size_, pillar_y_size_, pillar_z_size_, 
+      min_x_range_, min_y_range_, min_z_range_, grid_x_size_, grid_y_size_, grid_z_size_, in_num_points,
+      num_point_feature_, voxel_num_, svid_to_dvid_map_, num_gather_point_feature_, dev_pfe_gather_feature, voxel_coors_);
+      
+  dynamic_voxelize_step2_kernel<<<num_point_block , num_threads_, 0, stream>>>(
+      dev_points, coors_, voxel_feats_, voxel_count_list_, in_num_points, 
+      num_point_feature_, pid_to_dvid_map_, svid_to_dvid_map_, grid_x_size_, grid_y_size_);
+  // pid_to_dvid_map得到的 dvid 可能小于1
+  voxel_mean_kernel<<<num_voxel_block_, num_threads_, 0, stream>>>(voxel_feats_, voxel_count_list_, voxel_num_);
+  gather_point_feature_kernel<<<num_point_block, num_threads_, 0, stream>>>(dev_pfe_gather_feature, voxel_feats_, 
+                                              pid_to_dvid_map_, num_gather_point_feature_, in_num_points);
 
-    gather_point_feature_kernel<<<max_num_pillars_, max_num_points_per_pillar_, 0, stream>>>(
-      max_num_pillars_,max_num_points_per_pillar_,num_point_feature_, num_gather_point_feature_,
-      min_x_range_, min_y_range_, min_z_range_,
-      pillar_x_size_, pillar_y_size_, pillar_z_size_, 
-      dev_pillar_point_feature, dev_num_points_per_pillar, dev_pillar_coors,
-      dev_points_mean_,
-      dev_pfe_gather_feature);
 }
-
-// void PreprocessPointsCuda::DoPreprocessPointsDynamic(
-//   const float* dev_points, const int in_num_points, 
-//   int* dev_x_coors,int* dev_y_coors, 
-//   float* dev_num_points_per_pillar,
-//   float* dev_pillar_point_feature, float* dev_pillar_coors,
-//   int* dev_sparse_pillar_map, int* host_pillar_count , float* dev_pfe_gather_feature) {
-//   // initialize paraments
-//   GPU_CHECK(cudaMemset(dev_pillar_point_feature_in_coors_, 0 , grid_y_size_ * grid_x_size_ * max_num_points_per_pillar_ *  num_point_feature_ * sizeof(float)));
-//   GPU_CHECK(cudaMemset(dev_pillar_count_histo_, 0 , grid_y_size_ * grid_x_size_ * sizeof(int)));
-//   GPU_CHECK(cudaMemset(dev_counter_, 0, sizeof(int)));
-//   GPU_CHECK(cudaMemset(dev_points_mean_, 0,  max_num_pillars_ * 3 * sizeof(float)));
-//   int num_block = DIVUP(in_num_points , num_threads_);
-//   dynamic_voxelize_kernel<<<num_block , num_threads_>>>(
-//       dev_points, dev_pillar_point_feature_in_coors_, dev_pillar_count_histo_,
-//       in_num_points, max_num_points_per_pillar_, grid_x_size_, grid_y_size_,
-//       grid_z_size_, min_x_range_, min_y_range_, min_z_range_, pillar_x_size_,
-//       pillar_y_size_, pillar_z_size_, num_point_feature_);
-  
-//     reduce_feats_kernel<<<num_block , num_threads_>>>(
-//       dev_pillar_count_histo_, dev_counter_, dev_x_coors,
-//       dev_y_coors, dev_num_points_per_pillar, dev_sparse_pillar_map,
-//       max_num_pillars_, max_num_points_per_pillar_, grid_x_size_,
-//       num_inds_for_scan_);  
-
-//   GPU_CHECK(cudaMemcpy(host_pillar_count, dev_counter_, 1 * sizeof(int),
-//       cudaMemcpyDeviceToHost));
-//   host_pillar_count[0] = min(host_pillar_count[0], max_num_pillars_);
-//   make_pillar_feature_kernel<<<host_pillar_count[0], max_num_points_per_pillar_>>>(
-//       dev_pillar_point_feature_in_coors_, dev_pillar_point_feature,
-//       dev_pillar_coors, dev_x_coors, dev_y_coors, dev_num_points_per_pillar,
-//       max_num_points_per_pillar_, num_point_feature_, grid_x_size_);
-  
-//   dim3 mean_block(max_num_points_per_pillar_,3); //(32,3)
-
-//   pillar_mean_kernel<<<host_pillar_count[0], mean_block,64 * 3 *sizeof(float)>>>(
-//     dev_points_mean_  ,num_point_feature_, dev_pillar_point_feature, dev_num_points_per_pillar, 
-//       max_num_pillars_ , max_num_points_per_pillar_);
-
-//       gather_point_feature_kernel<<<max_num_pillars_, max_num_points_per_pillar_>>>(
-//     max_num_pillars_,max_num_points_per_pillar_,num_point_feature_, num_gather_point_feature_,
-//     min_x_range_, min_y_range_, min_z_range_,
-//     pillar_x_size_, pillar_y_size_, pillar_z_size_, 
-//     dev_pillar_point_feature, dev_num_points_per_pillar, dev_pillar_coors,
-//     dev_points_mean_,
-//     dev_pfe_gather_feature);
-// }
 
 

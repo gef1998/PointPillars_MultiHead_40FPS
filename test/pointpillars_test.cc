@@ -80,7 +80,7 @@ void SaveBoxPred(std::vector<BoundingBox> boxes, std::string file_name)
 };
 
 TEST(PointPillars, __build_model__) {
-  const std::string DB_CONF = "/home/gef/PointPillars_MultiHead_40FPS/bootstrap.yaml";
+  const std::string DB_CONF = "/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/bootstrap.yaml";
   YAML::Node config = YAML::LoadFile(DB_CONF);
 
   std::string pfe_file,backbone_file; 
@@ -107,7 +107,7 @@ TEST(PointPillars, __build_model__) {
   in_num_points = Bin2Arrary(points_array, file_name, input_num_feature);
 
   
-  for (int _ = 0 ; _ < 10 ; _++)
+  for (int _ = 0 ; _ < 1000 ; _++)
   {
 
     cudaDeviceSynchronize();

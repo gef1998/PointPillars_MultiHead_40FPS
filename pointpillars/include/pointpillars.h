@@ -185,22 +185,22 @@ class PointPillars {
     cudaEvent_t backbone_start_, backbone_end_;
     cudaEvent_t postprocess_start_, postprocess_end_;
     float* dev_points_;
-    int host_pillar_count_[1];
-    int* dev_x_coors_;
-    int* dev_y_coors_;
-    float* dev_num_points_per_pillar_;
-    int* dev_sparse_pillar_map_;
+    // int host_pillar_count_[1];
+    // int* dev_x_coors_;
+    // int* dev_y_coors_;
+    // float* dev_num_points_per_pillar_;
+    // int* dev_sparse_pillar_map_;
     int* dev_cumsum_along_x_;
     int* dev_cumsum_along_y_;
 
-    float* dev_pillar_point_feature_;
-    float* dev_pillar_coors_;
+    // float* dev_pillar_point_feature_;
+    // float* dev_pillar_coors_;
     float* dev_points_mean_;
 
     float* dev_pfe_gather_feature_;
     void* pfe_buffers_[2];
     //variable for doPostprocessCudaMultiHead
-    void* rpn_buffers_[4];
+    void* rpn_buffers_[7];
     
     float* dev_scattered_feature_;
     
@@ -252,6 +252,9 @@ class PointPillars {
      * @param[out] engine_ptr TensorRT model engine made 
      * @details Load Engine model, and convert it to TensorRT model
      */
+
+    void LoadTRTPlugins();
+
     void EngineToTRTModel(const std::string &engine_file ,     
                         nvinfer1::ICudaEngine** engine_ptr) ;
 

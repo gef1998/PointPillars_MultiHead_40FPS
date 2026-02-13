@@ -6,9 +6,9 @@ namespace {
     constexpr char kDefaultCloudTopic[] = "/cartographer_ros/merge_point_cloud";
     constexpr char kDefaultObjectsTopic[] = "/detection/lidar_detector/objects3d";
     constexpr char kDefaultPfePath[] =
-        "/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/jz_pfe_1.8.trt";
+        "/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/jz_vfe_bchw.trt";
     constexpr char kDefaultBackbonePath[] =
-        "/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/jz_backbone_1.8.trt";
+        "/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/jz_backbone.trt";
     constexpr char kDefaultConfigPath[] =
         "/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/pointpillars/cfgs/pointpillars_hv_fpn_sbn-all_8xb4-2x_jz-3d.yaml";
 }  // namespace

@@ -52,6 +52,7 @@ class PreprocessPointsCuda {
     // initializer list
     const int num_threads_;
     const int max_num_pillars_;
+    const int max_num_points_;
     const int max_num_points_per_pillar_;
     const int num_point_feature_;
     const int num_gather_point_feature_;
@@ -71,6 +72,13 @@ class PreprocessPointsCuda {
     int* dev_pillar_count_histo_;
     int* dev_pillar_count_;
 
+    // dynamic
+    int* coors_;
+    int* voxel_num_;
+    int* svid_to_dvid_map_;
+    float* voxel_feats_;
+    float* voxel_mean_;
+    int num_voxel_block_;
     int* dev_counter_;
     float* dev_points_mean_;
 
@@ -99,7 +107,7 @@ class PreprocessPointsCuda {
    * @param[in] min_z_range Minimum z value for point cloud
    * @details Captital variables never change after the compile
    */
-  PreprocessPointsCuda( const int num_threads, const int max_num_pillars, const int max_points_per_pillar, 
+  PreprocessPointsCuda( const int num_threads, const int max_num_pillars, const int max_num_points, const int max_points_per_pillar, 
                         const int num_point_feature, const int kNumGatherPointFeature, const int num_inds_for_scan, 
                         const int grid_x_size, const int grid_y_size, const int grid_z_size, 
                         const float pillar_x_size, const float pillar_y_size, const float pillar_z_size, 
@@ -129,13 +137,6 @@ class PreprocessPointsCuda {
    */
   void DoPreprocessPointsCuda(const float* dev_points,
                               const int in_num_points,
-                              int* dev_x_coors,
-                              int* dev_y_coors,
-                              float* dev_num_points_per_pillar,
-                              float* dev_pillar_point_feature,
-                              float* dev_pillar_coors,
-                              int* dev_sparse_pillar_map,
-                              int* host_pillar_count,
-                              float* dev_pfe_gather_feature,
+                              void** buffer,
                               cudaStream_t stream = nullptr);
 };

@@ -74,6 +74,7 @@ endif ()
 find_library(NVINFER NAMES nvinfer)
 find_library(NVPARSERS NAMES nvparsers)
 find_library(NVONNXPARSERS NAMES nvonnxparser)
+find_library(NVINFER_PLUGIN NAMES nvinfer_plugin)
 
 list(APPEND LINK_LIBRARY
             ${CUDA_cusparse_LIBRARY}
@@ -104,6 +105,47 @@ set(COMMON_INCLUDES ${CMAKE_CURRENT_BINARY_DIR})
 set(PROJECT_LIB_NAME ${PROJECT_NAME})
 include_directories(${COMMON_INCLUDES})
 add_subdirectory(${PROJECT_SOURCE_DIR}/pointpillars)
+
+############################################################
+# Build TensorRT plugins shared library
+############################################################
+add_library(pointpillars_trt_plugins SHARED
+    # GetFeatPerPoint
+    ${PROJECT_SOURCE_DIR}/plugin/get_feat_per_point/get_feat_per_point_plugin.cc
+    ${PROJECT_SOURCE_DIR}/plugin/get_feat_per_point/get_feat_per_point.cu
+
+    # GetSparseVoxelFeat
+    ${PROJECT_SOURCE_DIR}/plugin/get_sparse_voxel_feat/get_sparse_voxel_feat_plugin.cc
+    ${PROJECT_SOURCE_DIR}/plugin/get_sparse_voxel_feat/get_sparse_voxel_feat.cu
+)
+
+# 让带有 <<<>>> kernel launch 的 .cc 走 NVCC
+set_source_files_properties(
+    ${PROJECT_SOURCE_DIR}/plugin/get_feat_per_point/get_feat_per_point_plugin.cc
+    ${PROJECT_SOURCE_DIR}/plugin/get_sparse_voxel_feat/get_sparse_voxel_feat_plugin.cc
+    PROPERTIES LANGUAGE CUDA
+)
+
+target_include_directories(pointpillars_trt_plugins
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/plugin/get_feat_per_point
+        ${PROJECT_SOURCE_DIR}/plugin/get_sparse_voxel_feat
+        ${PROJECT_SOURCE_DIR}/pointpillars/include
+        ${CUDA_INCLUDE_DIRS}
+)
+
+target_link_libraries(pointpillars_trt_plugins
+    PRIVATE
+        ${NVINFER}
+        ${NVONNXPARSERS}
+        ${NVINFER_PLUGIN}
+        ${CUDA_LIBRARIES}
+)
+
+set_target_properties(pointpillars_trt_plugins PROPERTIES
+    OUTPUT_NAME "pointpillars_trt_plugins"
+)
+
 
 
 ############################################################

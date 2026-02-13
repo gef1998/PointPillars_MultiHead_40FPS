@@ -3,13 +3,13 @@ ScoreThreshold: 0.1
 NmsOverlapThreshold: 0.2
 UseOnnx: false 
 
-PfeOnnx: /home/gef/PointPillars_MultiHead_40FPS/model/test_pfe.onnx
-BackboneOnnx: /home/gef/PointPillars_MultiHead_40FPS/model/test_backbone.onnx
+PfeOnnx: /home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/test_pfe.onnx
+BackboneOnnx: /home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/test_backbone.onnx
 
-PfeTrt: /home/gef/PointPillars_MultiHead_40FPS/model/test_pfe.trt
-BackboneTrt: /home/gef/PointPillars_MultiHead_40FPS/model/test_backbone.trt
+PfeTrt: /home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/jz_vfe_dv.trt
+BackboneTrt: /home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/test_backbone.trt
 
-ModelConfig: /home/gef/PointPillars_MultiHead_40FPS/pointpillars/cfgs/pointpillars_hv_fpn_sbn-all_8xb4-2x_nus-3d.yaml
+ModelConfig: /home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/pointpillars/cfgs/pointpillars_dv_fpn_sbn-all_8xb4-2x_nus-3d.yaml
 
-InputFile: /data/gef/PointPillars_MultiHead_40FPS/tmp/test.bin
-OutputFile: /data/gef/PointPillars_MultiHead_40FPS/test/testdata/boxes.txt
+InputFile: /home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/tmp/test_nus.bin
+OutputFile: /home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/test/testdata/boxes.txt
