@@ -219,85 +219,49 @@ PointPillars::PointPillars(const float score_threshold,
 void PointPillars::DeviceMemoryMalloc() {
     // for pillars 
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_points_), kMaxNumPoints * kNumPointFeature * sizeof(float)));
-    // GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_num_points_per_pillar_), kMaxNumPillars * sizeof(float))); // M
-    // GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_x_coors_), kMaxNumPillars * sizeof(int))); // M
-    // GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_y_coors_), kMaxNumPillars * sizeof(int))); // M
-    // GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_pillar_point_feature_), kMaxNumPillars * kMaxNumPointsPerPillar * kNumPointFeature * sizeof(float))); // [M , m , 4]
-    // GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_pillar_coors_),  kMaxNumPillars * 4 * sizeof(float))); // [M , 4]
-
-    // for sparse map
-    // GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_sparse_pillar_map_), kNumIndsForScan * kNumIndsForScan * sizeof(int))); // [1024 , 1024]
-    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_cumsum_along_x_), kNumIndsForScan * kNumIndsForScan * sizeof(int))); // [1024 , 1024]
-    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_cumsum_along_y_), kNumIndsForScan * kNumIndsForScan * sizeof(int)));// [1024 , 1024]
-
-    // GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_pfe_gather_feature_),
-    //                     kMaxNumPillars * kMaxNumPointsPerPillar *
-    //                         kNumGatherPointFeature * sizeof(float))); // TODO:hv
-
-    // GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_pfe_gather_feature_),  // TODO:dv
-    //                     kMaxNumPoints * kNumGatherPointFeature * sizeof(float)));
-
-    // for trt inference
-    // create GPU buffers and a stream
-
-    // GPU_CHECK(cudaMalloc(&pfe_buffers_[0], kMaxNumPillars * kMaxNumPointsPerPillar *
-    //                                     kNumGatherPointFeature * sizeof(float)));
-    // pfe_buffers_[0] = dev_pfe_gather_feature_; //TODO: DEL
-
-    GPU_CHECK(cudaMalloc(&pfe_buffers_[1], kMaxNumPillars * 64 * sizeof(float)));
-
-    // for scatter kernel
-    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_scattered_feature_), kRpnInputSize * sizeof(float)));
 
     // for backbone
-    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&rpn_buffers_[0]),  kMaxNumPoints * kNumGatherPointFeature * sizeof(float))); //dev_pfe_gather_feature_
-    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&rpn_buffers_[1]), kMaxNumPillars * sizeof(int)));  // voxel_count_list
-    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&rpn_buffers_[2]), kMaxNumPoints * sizeof(int)));  // pid_to_dvid_map
-    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&rpn_buffers_[3]), kMaxNumPillars * 2 * sizeof(int)));  // voxel_coors
+    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&pfe_buffers_[0]), kMaxNumPoints * kNumGatherPointFeature * sizeof(float))); //dev_pfe_gather_feature_
+    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&pfe_buffers_[1]), kMaxNumPillars * sizeof(int)));  // voxel_count_list
+    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&pfe_buffers_[2]), kMaxNumPoints * sizeof(int)));  // pid_to_dvid_map
+    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&pfe_buffers_[3]), kMaxNumPillars * 2 * sizeof(int)));  // voxel_coors
+
+    GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&pfe_buffers_[4]), 64 * 400 * 400 * sizeof(float)));  // sparse_voxel_feat
+
+
+    rpn_buffers_[0] = pfe_buffers_[4];
+    GPU_CHECK(cudaMalloc(&rpn_buffers_[1],  kNumFeature * kAnchorSizes.size() * kAnchorRotations.size() * kNumClass * sizeof(float)));  //cls_score
+    GPU_CHECK(cudaMalloc(&rpn_buffers_[2],  kNumFeature * kAnchorSizes.size() * kAnchorRotations.size() * kNumOutputBoxFeature * sizeof(float))); // bbox_pred
+    GPU_CHECK(cudaMalloc(&rpn_buffers_[3],  kNumFeature * kAnchorSizes.size() * kAnchorRotations.size() * 2 * sizeof(float))); // dir_cls_pred
 
     // inputs, voxel_count_list, pid_to_dvid_map, voxel_coors
-    // rpn_buffers_[0] = dev_pfe_gather_feature_;
-    // preprocess_points_cuda_ptr_->SetDvInput(rpn_buffers_);
+    // pfe_buffers_[0] = dev_pfe_gather_feature_;
+    // preprocess_points_cuda_ptr_->SetDvInput(pfe_buffers_);
 
-    GPU_CHECK(cudaMalloc(&rpn_buffers_[4],  kNumFeature * kAnchorSizes.size() * kAnchorRotations.size() * kNumClass * sizeof(float)));  //cls_score
-    GPU_CHECK(cudaMalloc(&rpn_buffers_[5],  kNumFeature * kAnchorSizes.size() * kAnchorRotations.size() * kNumOutputBoxFeature * sizeof(float))); // bbox_pred
-    GPU_CHECK(cudaMalloc(&rpn_buffers_[6],  kNumFeature * kAnchorSizes.size() * kAnchorRotations.size() * 2 * sizeof(float))); // dir_cls_pred
 }
 
 
 PointPillars::~PointPillars() {
     // for pillars 
     GPU_CHECK(cudaFree(dev_points_));
-    // GPU_CHECK(cudaFree(dev_num_points_per_pillar_));
-    // GPU_CHECK(cudaFree(dev_x_coors_));
-    // GPU_CHECK(cudaFree(dev_y_coors_));
-    // GPU_CHECK(cudaFree(dev_pillar_point_feature_));
-    // GPU_CHECK(cudaFree(dev_pillar_coors_));
-    // for sparse map
-    // GPU_CHECK(cudaFree(dev_sparse_pillar_map_));    
-    GPU_CHECK(cudaFree(dev_cumsum_along_x_));
-    GPU_CHECK(cudaFree(dev_cumsum_along_y_));
-    // for pfe forward
-    GPU_CHECK(cudaFree(dev_pfe_gather_feature_));
-      
-    GPU_CHECK(cudaFree(pfe_buffers_[0]));
-    GPU_CHECK(cudaFree(pfe_buffers_[1]));
 
     // TODO: 优化Free方式
-    GPU_CHECK(cudaFree(rpn_buffers_[0]));
+    GPU_CHECK(cudaFree(pfe_buffers_[0]));
+    GPU_CHECK(cudaFree(pfe_buffers_[1]));
+    GPU_CHECK(cudaFree(pfe_buffers_[2]));
+    GPU_CHECK(cudaFree(pfe_buffers_[3]));
+    GPU_CHECK(cudaFree(pfe_buffers_[4]));
+
+    // GPU_CHECK(cudaFree(rpn_buffers_[0]));
     GPU_CHECK(cudaFree(rpn_buffers_[1]));
     GPU_CHECK(cudaFree(rpn_buffers_[2]));
     GPU_CHECK(cudaFree(rpn_buffers_[3]));
-    GPU_CHECK(cudaFree(rpn_buffers_[4]));
-    GPU_CHECK(cudaFree(rpn_buffers_[5]));
-    GPU_CHECK(cudaFree(rpn_buffers_[6]));
 
     pfe_context_->destroy();
     backbone_context_->destroy();
     pfe_engine_->destroy();
     backbone_engine_->destroy();
     // for post process
-    GPU_CHECK(cudaFree(dev_scattered_feature_));
     // Destroy CUDA events
     cudaEventDestroy(preprocess_start_);
     cudaEventDestroy(preprocess_end_);
@@ -314,10 +278,8 @@ PointPillars::~PointPillars() {
 }
 
 void PointPillars::SetDeviceMemoryToZero() {
-    GPU_CHECK(cudaMemsetAsync(pfe_buffers_[1],       0, kMaxNumPillars * 64 * sizeof(float), stream_));
-    GPU_CHECK(cudaMemsetAsync(dev_scattered_feature_,    0, kNumThreads * kGridYSize * kGridXSize * sizeof(float), stream_));
-    GPU_CHECK(cudaMemsetAsync(rpn_buffers_[1], 0,  kMaxNumPillars * sizeof(int), stream_)); //voxel_count_list_
-    GPU_CHECK(cudaMemsetAsync(rpn_buffers_[3], -1,  kMaxNumPillars * 2 * sizeof(int), stream_));
+    GPU_CHECK(cudaMemsetAsync(pfe_buffers_[1], 0,  kMaxNumPillars * sizeof(int), stream_)); //voxel_count_list_
+    GPU_CHECK(cudaMemsetAsync(pfe_buffers_[3], -1,  kMaxNumPillars * 2 * sizeof(int), stream_));
 }
 
 void PointPillars::InitTRT(const bool use_onnx) {
@@ -435,7 +397,7 @@ std::vector<BoundingBox> PointPillars::DoInference(const float* in_points_array,
     cudaMemcpyAsync(dev_points_, in_points_array, in_num_points * kNumPointFeature * sizeof(float),
         cudaMemcpyHostToDevice, stream_);
     // [STEP 2] : preprocess
-    preprocess_points_cuda_ptr_->DoPreprocessPointsCuda(dev_points_, in_num_points, rpn_buffers_, stream_);
+    preprocess_points_cuda_ptr_->DoPreprocessPointsCuda(dev_points_, in_num_points, pfe_buffers_, stream_);
     GPU_CHECK(cudaEventRecord(preprocess_end_, stream_));
     
     // [STEP 3] : pfe forward
@@ -463,7 +425,7 @@ std::vector<BoundingBox> PointPillars::DoInference(const float* in_points_array,
     pfe_context_->setBindingDimensions(3, dims3);   // coords
 
     GPU_CHECK(cudaEventRecord(pfe_start_, stream_));
-    pfe_context_->enqueueV2(rpn_buffers_, stream_, nullptr);
+    pfe_context_->enqueueV2(pfe_buffers_, stream_, nullptr);
 
     // 等待 PFE 完成，因为 scatter 需要其输出
     GPU_CHECK(cudaEventRecord(pfe_end_, stream_));
@@ -471,25 +433,22 @@ std::vector<BoundingBox> PointPillars::DoInference(const float* in_points_array,
     // [STEP 4] : scatter pillar feature
     GPU_CHECK(cudaEventRecord(scatter_start_, stream_));
     // scatter_cuda_ptr_->DoScatterCuda(
-    //     40000, reinterpret_cast<float*>(pfe_buffers_[1]), dev_scattered_feature_, stream_);
+    //     40000, reinterpret_cast<float*>(rpn_buffers_[1]), dev_scattered_feature_, stream_);
     // 等待 scatter 完成，因为 backbone 需要其输出
     GPU_CHECK(cudaEventRecord(scatter_end_, stream_));
 
     // [STEP 5] : backbone forward
     GPU_CHECK(cudaEventRecord(backbone_start_, stream_));
-    // GPU_CHECK(cudaMemcpyAsync(rpn_buffers_[0], dev_scattered_feature_,
-    //                         kRpnInputSize * sizeof(float), cudaMemcpyDeviceToDevice, stream_));
-
-    // backbone_context_->enqueueV2(rpn_buffers_, stream_, nullptr);
+    backbone_context_->enqueueV2(rpn_buffers_, stream_, nullptr);
     // 等待 backbone 完成，因为 postprocess 需要其输出
     GPU_CHECK(cudaEventRecord(backbone_end_, stream_));
 
     // [STEP 6]: postprocess (multihead)
     GPU_CHECK(cudaEventRecord(postprocess_start_, stream_));
     postprocess_ptr_->DoPostprocess(
-        reinterpret_cast<float*>(rpn_buffers_[4]), //cls_score
-        reinterpret_cast<float*>(rpn_buffers_[5]),  // bbox_pred
-        reinterpret_cast<float*>(rpn_buffers_[6]), // dir_cls_pred   
+        reinterpret_cast<float*>(rpn_buffers_[1]), //cls_score
+        reinterpret_cast<float*>(rpn_buffers_[2]),  // bbox_pred
+        reinterpret_cast<float*>(rpn_buffers_[3]), // dir_cls_pred   
         stream_);
     // 等待 postprocess 完成，因为需要读取结果
     GPU_CHECK(cudaEventRecord(postprocess_end_, stream_));
@@ -520,89 +479,3 @@ std::vector<BoundingBox> PointPillars::DoInference(const float* in_points_array,
     std::cout << "------------------------------------" << std::endl;
     return this->postprocess_ptr_->bndBoxVec();
 }
-
-
-// std::vector<BoundingBox> PointPillars::DoInference(const float* in_points_array, int in_num_points) 
-// {
-//     GPU_CHECK(cudaEventRecord(preprocess_start_, stream_));
-//     // [STEP 1] : load pointcloud
-//     // TODO: 初始化时malloc
-//     SetDeviceMemoryToZero();
-//     if (in_num_points > kMaxNumPoints){
-//         printf("[WARNING] Input points %d exceeds max limit %d, truncated to %d\n", 
-//             in_num_points, kMaxNumPoints, kMaxNumPoints); 
-//         in_num_points = kMaxNumPoints;
-//     }
-    
-//     cudaMemcpyAsync(dev_points_, in_points_array, in_num_points * kNumPointFeature * sizeof(float),
-//         cudaMemcpyHostToDevice, stream_);
-//     // [STEP 2] : preprocess
-//     preprocess_points_cuda_ptr_->DoPreprocessPointsCuda(
-//           dev_points_, in_num_points, dev_x_coors_, dev_y_coors_,
-//           dev_num_points_per_pillar_, dev_pillar_point_feature_, dev_pillar_coors_,
-//           dev_sparse_pillar_map_, host_pillar_count_ ,
-//           dev_pfe_gather_feature_, stream_);
-//     GPU_CHECK(cudaEventRecord(preprocess_end_, stream_));
-    
-//     // [STEP 3] : pfe forward
-//     GPU_CHECK(cudaEventRecord(pfe_start_, stream_));
-//     // GPU_CHECK(cudaMemcpyAsync(pfe_buffers_[0], dev_pfe_gather_feature_,
-//     //                         kMaxNumPillars * kMaxNumPointsPerPillar * kNumGatherPointFeature * sizeof(float), ///kNumGatherPointFeature
-//     //                         cudaMemcpyDeviceToDevice, stream_));
-//     pfe_context_->enqueueV2(pfe_buffers_, stream_, nullptr);
-//     // 等待 PFE 完成，因为 scatter 需要其输出
-//     GPU_CHECK(cudaEventRecord(pfe_end_, stream_));
-
-//     // [STEP 4] : scatter pillar feature
-//     GPU_CHECK(cudaEventRecord(scatter_start_, stream_));
-//     scatter_cuda_ptr_->DoScatterCuda(
-//         host_pillar_count_[0], dev_x_coors_, dev_y_coors_,
-//         reinterpret_cast<float*>(pfe_buffers_[1]), dev_scattered_feature_, stream_);
-//     // 等待 scatter 完成，因为 backbone 需要其输出
-//     GPU_CHECK(cudaEventRecord(scatter_end_, stream_));
-
-//     // [STEP 5] : backbone forward
-//     GPU_CHECK(cudaEventRecord(backbone_start_, stream_));
-//     // GPU_CHECK(cudaMemcpyAsync(rpn_buffers_[0], dev_scattered_feature_,
-//     //                         kRpnInputSize * sizeof(float), cudaMemcpyDeviceToDevice, stream_));
-
-//     backbone_context_->enqueueV2(rpn_buffers_, stream_, nullptr);
-//     // 等待 backbone 完成，因为 postprocess 需要其输出
-//     GPU_CHECK(cudaEventRecord(backbone_end_, stream_));
-
-//     // [STEP 6]: postprocess (multihead)
-//     GPU_CHECK(cudaEventRecord(postprocess_start_, stream_));
-//     postprocess_ptr_->DoPostprocess(
-//         reinterpret_cast<float*>(rpn_buffers_[1]), //cls_score
-//         reinterpret_cast<float*>(rpn_buffers_[2]),  // bbox_pred
-//         reinterpret_cast<float*>(rpn_buffers_[3]), // dir_cls_pred   
-//         stream_);
-//     // 等待 postprocess 完成，因为需要读取结果
-//     GPU_CHECK(cudaEventRecord(postprocess_end_, stream_));
-    
-//     // 同步最后一个事件，确保所有操作都已完成，然后才能安全地计算时间
-//     GPU_CHECK(cudaEventSynchronize(postprocess_end_));
-
-//     // Calculate elapsed time using CUDA events
-//     float preprocess_time_ms = 0.0f, pfe_time_ms = 0.0f, scatter_time_ms = 0.0f;
-//     float backbone_time_ms = 0.0f, postprocess_time_ms = 0.0f, total_time_ms = 0.0f;
-    
-//     GPU_CHECK(cudaEventElapsedTime(&preprocess_time_ms, preprocess_start_, preprocess_end_));
-//     GPU_CHECK(cudaEventElapsedTime(&pfe_time_ms, pfe_start_, pfe_end_));
-//     GPU_CHECK(cudaEventElapsedTime(&scatter_time_ms, scatter_start_, scatter_end_));
-//     GPU_CHECK(cudaEventElapsedTime(&backbone_time_ms, backbone_start_, backbone_end_));
-//     GPU_CHECK(cudaEventElapsedTime(&postprocess_time_ms, postprocess_start_, postprocess_end_));
-//     GPU_CHECK(cudaEventElapsedTime(&total_time_ms, preprocess_start_, postprocess_end_));
-
-//     std::cout << "------------------------------------" << std::endl;
-//     std::cout << setiosflags(ios::left)  << setw(14) << "Module" << setw(12)  << "Time"  << resetiosflags(ios::left) << std::endl;
-//     std::cout << "------------------------------------" << std::endl;
-//     std::string Modules[] = {"Preprocess" , "Pfe" , "Scatter" , "Backbone" , "Postprocess" , "Summary"};
-//     double Times[] = {preprocess_time_ms, pfe_time_ms, scatter_time_ms, backbone_time_ms, postprocess_time_ms, total_time_ms}; 
-
-//     for (int i =0 ; i < 6 ; ++i) {
-//         std::cout << setiosflags(ios::left) << setw(14) << Modules[i]  << setw(8)  << Times[i] << " ms" << resetiosflags(ios::left) << std::endl;
-//     }
-//     std::cout << "------------------------------------" << std::endl;
-//     return this->postprocess_ptr_->bndBoxVec();
-// }

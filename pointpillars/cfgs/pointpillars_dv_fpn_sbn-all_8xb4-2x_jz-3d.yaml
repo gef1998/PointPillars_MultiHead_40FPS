@@ -25,6 +25,7 @@ DATA_CONFIG:
 
 MODEL:
     NAME: PointPillar
+
     VFE:
         NAME: HardVFE
         feat_channels: [64, 64]
@@ -100,6 +101,8 @@ MODEL:
                 'code_size': 7,
                 'encode_angle_by_sincos': True
             }
+
+
         LOSS_CONFIG:
             REG_LOSS_TYPE: WeightedL1Loss
             LOSS_WEIGHTS: {

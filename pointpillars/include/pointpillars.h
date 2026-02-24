@@ -190,20 +190,13 @@ class PointPillars {
     // int* dev_y_coors_;
     // float* dev_num_points_per_pillar_;
     // int* dev_sparse_pillar_map_;
-    int* dev_cumsum_along_x_;
-    int* dev_cumsum_along_y_;
-
     // float* dev_pillar_point_feature_;
     // float* dev_pillar_coors_;
     float* dev_points_mean_;
-
-    float* dev_pfe_gather_feature_;
-    void* pfe_buffers_[2];
+    void* rpn_buffers_[4];
     //variable for doPostprocessCudaMultiHead
-    void* rpn_buffers_[7];
-    
-    float* dev_scattered_feature_;
-    
+    void* pfe_buffers_[5];
+        
     std::unique_ptr<PreprocessPointsCuda> preprocess_points_cuda_ptr_;
     std::unique_ptr<ScatterCuda> scatter_cuda_ptr_;
     std::unique_ptr<Postprocess> postprocess_ptr_;

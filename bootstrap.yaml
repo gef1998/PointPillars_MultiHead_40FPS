@@ -7,9 +7,9 @@ PfeOnnx: /home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/test_pfe.onn
 BackboneOnnx: /home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/test_backbone.onnx
 
 PfeTrt: /home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/jz_vfe_dv.trt
-BackboneTrt: /home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/test_backbone.trt
+BackboneTrt: /home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/jz_backbone_dv.trt
 
-ModelConfig: /home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/pointpillars/cfgs/pointpillars_dv_fpn_sbn-all_8xb4-2x_nus-3d.yaml
+ModelConfig: /home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/pointpillars/cfgs/pointpillars_dv_fpn_sbn-all_8xb4-2x_jz-3d.yaml
 
 InputFile: /home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/tmp/test_nus.bin
 OutputFile: /home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/test/testdata/boxes.txt

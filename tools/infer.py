@@ -109,10 +109,10 @@ use_onnx_bool = False
 # rpn_file = '/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/jz_backbone.trt'
 # cfg_yaml_path = '/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/pointpillars/cfgs/pointpillars_hv_fpn_sbn-all_8xb4-2x_jz-3d.yaml'
 
-pfe_file = '/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/test_bchw.trt'
+pfe_file = '/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/jz_vfe_dv.trt'
 # pfe_file = '/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/test_pfe.trt'
-rpn_file = '/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/test_backbone.trt'
-cfg_yaml_path = '/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/pointpillars/cfgs/pointpillars_hv_fpn_sbn-all_8xb4-2x_nus-3d.yaml'
+rpn_file = '/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/jz_backbone_dv.trt'
+cfg_yaml_path = '/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/pointpillars/cfgs/pointpillars_dv_fpn_sbn-all_8xb4-2x_jz-3d.yaml'
 
 # 初始化（参数与C++构造一致）
 pp = pointpillars_py.PointPillars(
@@ -130,7 +130,7 @@ fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter(output_video, fourcc, fps, (frame_width, frame_height))
 
 bag_path = '/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/2022-03-08-09-41-57.bag'
-topic_name = '/cartographer_ros/merge_point_cloud' # ego坐标系，地面为0
+topic_name = '/merge_cloud' # ego坐标系，地面为0
 # n_sweeps = 10
 max_n_points = 200000
 points = np.zeros((max_n_points, 4))
@@ -159,7 +159,7 @@ with rosbag.Bag(bag_path, 'r') as bag:
         data = data.reshape((-1, msg.point_step))
         x = data[:, 0:4].view(np.float32).reshape(-1)
         y = data[:, 4:8].view(np.float32).reshape(-1)
-        z = data[:, 8:12].view(np.float32).reshape(-1)
+        z = data[:, 8:12].view(np.float32).reshape(-1) # 针对/cartographer_ros/merge_point_cloud需要-1.8
         ts = np.zeros(z.shape)
         cur_points = np.stack([x, y, z, ts], axis=1)
         num_pts = cur_points.shape[0]

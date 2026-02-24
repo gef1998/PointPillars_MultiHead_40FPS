@@ -1,3 +1,5 @@
+// #include <stdio.h>
+
 __global__ void get_sparse_voxel_feat_kernel(
     const float* reduced_feat,
     const int* voxel_coors,
@@ -12,7 +14,13 @@ __global__ void get_sparse_voxel_feat_kernel(
     return;
   }
   int x_ind = voxel_coors[v_id * 2 + 1];
-  // TODO: 400can
+  // TODO: 400 参数化
   sparse_voxel_feat[i_feature * 400 * 400 + y_ind * 400 + x_ind] = reduced_feat[v_id * num_feats + i_feature]; 
 
+    // #ifndef NDEBUG
+    // if (v_id == 0)
+    // { 
+    //   printf("sparse_voxel_feat[%d] = %.3f \n", i_feature * 400 * 400 + y_ind * 400 + x_ind, sparse_voxel_feat[i_feature * 400 * 400 + y_ind * 400 + x_ind]);
+    // }
+    // #endif
 }

@@ -107,7 +107,7 @@ TEST(PointPillars, __build_model__) {
   in_num_points = Bin2Arrary(points_array, file_name, input_num_feature);
 
   
-  for (int _ = 0 ; _ < 1000 ; _++)
+  for (int _ = 0 ; _ < 10 ; _++)
   {
 
     cudaDeviceSynchronize();

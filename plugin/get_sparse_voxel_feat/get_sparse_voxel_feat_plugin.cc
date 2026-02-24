@@ -1,6 +1,6 @@
 /**
  * @file get_sparse_voxel_feat_plugin.cc
- * @brief TensorRT GetSparseVoxelFeat 插件的框架实现(不含具体计算逻辑)。
+ * @brief TensorRT GetSparseVoxelFeat 插件的框架实现
  */
 
 #include "get_sparse_voxel_feat_plugin.h"
@@ -13,7 +13,7 @@
 #include <cuda_runtime.h>
 
 // CUDA kernel 前向声明, 实现见 `get_sparse_voxel_feat.cu`
-__global__ void voxel_mean_kernel2(
+__global__ void voxel_mean_kernel(
     const float* point_feats,
     const int* voxel_count_list,
     const int* pid_to_dvid_map,
@@ -225,7 +225,7 @@ int GetSparseVoxelFeatPlugin::enqueue(const PluginTensorDesc* inputDesc,
 
   const int threads = 64;
   const int num_point_block = DIVUP(num_points, threads);
-  voxel_mean_kernel2<<<num_point_block, threads, 0, stream>>>(
+  voxel_mean_kernel<<<num_point_block, threads, 0, stream>>>(
       point_feats, voxel_count_list, pid_to_dvid_map, num_points, num_feats, reduced_feat);
 
   get_sparse_voxel_feat_kernel<<<40000, num_feats, 0, stream>>>(reduced_feat, voxel_coors, num_feats, sparse_voxel_feat);
