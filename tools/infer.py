@@ -109,10 +109,10 @@ use_onnx_bool = False
 # rpn_file = '/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/jz_backbone.trt'
 # cfg_yaml_path = '/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/pointpillars/cfgs/pointpillars_hv_fpn_sbn-all_8xb4-2x_jz-3d.yaml'
 
-pfe_file = '/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/jz_vfe_dv.trt'
-# pfe_file = '/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/test_pfe.trt'
-rpn_file = '/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/jz_backbone_dv.trt'
-cfg_yaml_path = '/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/pointpillars/cfgs/pointpillars_dv_fpn_sbn-all_8xb4-2x_jz-3d.yaml'
+pfe_file = "/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/vfe_dv.trt"
+rpn_file = "/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/model/backbone_dv.trt"
+cfg_yaml_path = "/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/pointpillars/cfgs/pointpillars_dv_fpn_sbn-all_8xb4-2x_nus-3d.yaml"
+
 
 # 初始化（参数与C++构造一致）
 pp = pointpillars_py.PointPillars(
@@ -159,7 +159,7 @@ with rosbag.Bag(bag_path, 'r') as bag:
         data = data.reshape((-1, msg.point_step))
         x = data[:, 0:4].view(np.float32).reshape(-1)
         y = data[:, 4:8].view(np.float32).reshape(-1)
-        z = data[:, 8:12].view(np.float32).reshape(-1) # 针对/cartographer_ros/merge_point_cloud需要-1.8
+        z = data[:, 8:12].view(np.float32).reshape(-1) - 1.8 # 针对/cartographer_ros/merge_point_cloud需要-1.8
         ts = np.zeros(z.shape)
         cur_points = np.stack([x, y, z, ts], axis=1)
         num_pts = cur_points.shape[0]
@@ -175,8 +175,8 @@ with rosbag.Bag(bag_path, 'r') as bag:
             points[:end - max_n_points] = cur_points[part1:]  # 第二段
         # points = np.fromfile("/home/gef/catkin_3d/src/PointPillars_MultiHead_40FPS/tmp/test.bin", dtype=np.float32).reshape(-1, 4) # 雷达坐标系，地面点为-1.8左右
         print(f"数据读取{time.time() - t1}")
-        boxes = pp.DoInference(points) # 输入点云各维度应该为(x, y, z, cur_ts-sweeps_ts)
-        bev = save_bev(points, boxes)
+        boxes = pp.DoInference(cur_points) # 输入点云各维度应该为(x, y, z, cur_ts-sweeps_ts)
+        bev = save_bev(cur_points, boxes)
         bev_resized = cv2.resize(bev, (frame_width, frame_height))
         cv2.imwrite("bev.png", bev_resized)
         out.write(bev_resized)

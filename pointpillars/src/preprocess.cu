@@ -340,7 +340,7 @@ __global__ void dynamic_voxelize_step1_kernel(
     feat_offset[0] = points_offset[0];
     feat_offset[1] = points_offset[1];
     feat_offset[2] = points_offset[2];
-    feat_offset[3] = points_offset[3];
+    feat_offset[3] = 0; // timestamp为0
     feat_offset[4] = points_offset[0];
     feat_offset[5] = points_offset[1];
     feat_offset[6] = points_offset[2];
@@ -486,30 +486,16 @@ PreprocessPointsCuda::PreprocessPointsCuda(
       min_y_range_(min_y_range),
       min_z_range_(min_z_range) {
     
-    
-    // GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_pillar_point_feature_in_coors_),
-    //     grid_y_size_ * grid_x_size_ * max_num_points_per_pillar_ *  num_point_feature_ * sizeof(float)));
-    // GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_pillar_count_histo_),
-    //     grid_y_size_ * grid_x_size_ * sizeof(int)));
-    // GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_counter_), sizeof(int)));
-    // GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&dev_points_mean_), max_num_pillars_ * 3 *sizeof(float)));
-
     // dynamic
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&coors_), max_num_points_ * 3 * sizeof(int)));  
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&voxel_num_), sizeof(int)));  
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&svid_to_dvid_map_), grid_x_size_ * grid_y_size_ * grid_z_size_ * sizeof(int)));  
-    // voxel_coors_ 仅存储每个稠密体素在 BEV 平面的 (y, x)，每个体素占用 2 个 int
     GPU_CHECK(cudaMalloc(reinterpret_cast<void**>(&voxel_feats_), max_num_pillars_ * 3 * sizeof(float)));  
     num_voxel_block_ = DIVUP(max_num_pillars_, num_threads_);    
 
     }
 
 PreprocessPointsCuda::~PreprocessPointsCuda() {
-    // GPU_CHECK(cudaFree(dev_pillar_point_feature_in_coors_));
-    // GPU_CHECK(cudaFree(dev_pillar_count_histo_));
-    // GPU_CHECK(cudaFree(dev_counter_));
-    // GPU_CHECK(cudaFree(dev_points_mean_));
-
     // dynamic
     GPU_CHECK(cudaFree(coors_));  
     GPU_CHECK(cudaFree(voxel_num_));  
@@ -529,7 +515,6 @@ void PreprocessPointsCuda::DoPreprocessPointsCuda(
 
   GPU_CHECK(cudaMemset(voxel_num_, 0,  sizeof(int)));
   GPU_CHECK(cudaMemset(svid_to_dvid_map_, -1,  grid_x_size_ * grid_y_size_ * grid_z_size_ * sizeof(int)));
-  // voxel_coors_ 为每个稠密体素记录 (y, x)，每个体素 2 个 int，初始化为 -1 表示无效
   GPU_CHECK(cudaMemset(voxel_feats_, 0,  max_num_pillars_ * 3 * sizeof(float)));
 
   int num_point_block = DIVUP(in_num_points , num_threads_);

@@ -277,10 +277,6 @@ PointPillars::~PointPillars() {
 
 }
 
-void PointPillars::SetDeviceMemoryToZero() {
-    GPU_CHECK(cudaMemsetAsync(pfe_buffers_[1], 0,  kMaxNumPillars * sizeof(int), stream_)); //voxel_count_list_
-    GPU_CHECK(cudaMemsetAsync(pfe_buffers_[3], -1,  kMaxNumPillars * 2 * sizeof(int), stream_));
-}
 
 void PointPillars::InitTRT(const bool use_onnx) {
   if (use_onnx_) {
@@ -382,6 +378,15 @@ void PointPillars::EngineToTRTModel(
     *engine_ptr = engine;
 
 }
+
+void PointPillars::SetDeviceMemoryToZero() {
+    // GPU_CHECK(cudaMemsetAsync(pfe_buffers_[0], 0,  kMaxNumPoints * kNumGatherPointFeature * sizeof(float), stream_));
+    GPU_CHECK(cudaMemsetAsync(pfe_buffers_[1], 0,  kMaxNumPillars * sizeof(int), stream_)); //voxel_count_list_
+    GPU_CHECK(cudaMemsetAsync(pfe_buffers_[3], -1,  kMaxNumPillars * 2 * sizeof(int), stream_));
+    GPU_CHECK(cudaMemsetAsync(pfe_buffers_[4], 0,  64 * 400 * 400 * sizeof(float), stream_));
+
+}
+
 
 std::vector<BoundingBox> PointPillars::DoInference(const float* in_points_array, int in_num_points) 
 {
